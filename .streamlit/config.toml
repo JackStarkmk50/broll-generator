@@ -1,0 +1,8 @@
+[server]
+# No file upload size limit (in MB). Default is 200.
+# Set to 0 for unlimited, or a high value for very large videos.
+maxUploadSize = 10000
+maxMessageSize = 10000
+
+[browser]
+gatherUsageStats = false

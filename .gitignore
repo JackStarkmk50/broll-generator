@@ -1,0 +1,29 @@
+# Local configuration
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Python environment and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime files
+temp_cache/
+b-roll_assets/
+qdrant_storage/
+data/*.db
+data/*.db-*
+*.log
+
+# Local workspace state
+.remember/
+.DS_Store
+Thumbs.db
