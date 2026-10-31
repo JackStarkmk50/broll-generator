@@ -6,3 +6,11 @@ maxMessageSize = 10000
 
 [browser]
 gatherUsageStats = false
+
+[theme]
+# Neutral light base: the app ships its own light/dark design system
+# (Appearance toggle in the sidebar). primaryColor only tints native
+# widgets that the custom CSS does not already cover.
+base = "light"
+primaryColor = "#C2530C"
+font = "sans serif"
