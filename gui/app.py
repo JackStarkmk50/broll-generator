@@ -1432,7 +1432,8 @@ else:
                 with st.spinner("Extracting and analyzing audio..."):
                     audio_path = extract_audio(media_path)
                     translator = build_translator(project.custom_instructions)
-                    analysis_new = translator.transcribe_audio(str(audio_path), transcribe_model="gemini-3.8-flash")
+                    analysis_new = translator.transcribe_audio(
+                        str(audio_path), transcribe_model=db.get_setting("gemini_model", "gemini-3.8-flash"))
                 if not analysis_new or not analysis_new.segments:
                     st.error("Gemini could not find usable speech. Try a video with clear narration or dialogue.")
                 else:
