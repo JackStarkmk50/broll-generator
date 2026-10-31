@@ -88,7 +88,8 @@ IMPORTANT:
 - Queries should describe VISUALS, not abstract concepts
 - Think about what a video editor would search for on Pinterest or stock sites
 - Be specific: "mother comforting crying child" not "parenting"
-- Include variety: wide shots, close-ups, abstract, literal"""
+- Include variety: wide shots, close-ups, abstract, literal
+- Every visual_description and search query must be acceptable to mainstream AI image generators, which reject restricted content such as sexually explicit or nude imagery, graphic gore, and hateful or demeaning depictions. Preserve the narration's real subjects and context whenever they are benign; only if a suggested visual would breach those rules, recast just that visual as a safe symbolic alternative (an object, an empty space, a silhouette)."""
 
 
 AUDIO_TRANSCRIBE_PROMPT = """You are an audio transcription and visual content assistant.
@@ -119,7 +120,8 @@ IMPORTANT:
 - Estimate start_time and end_time in seconds
 - Search queries must be ENGLISH, describe VISUALS
 - Be specific: "mother comforting crying child" not "parenting"
-- Include variety per segment: wide shots, close-ups, abstract, literal"""
+- Include variety per segment: wide shots, close-ups, abstract, literal
+- Every visual_description and search query must be acceptable to mainstream AI image generators, which reject restricted content such as sexually explicit or nude imagery, graphic gore, and hateful or demeaning depictions. Preserve the narration's real subjects and context whenever they are benign; only if a suggested visual would breach those rules, recast just that visual as a safe symbolic alternative (an object, an empty space, a silhouette)."""
 
 
 @dataclass

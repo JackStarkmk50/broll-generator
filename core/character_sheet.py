@@ -18,7 +18,7 @@ Write a short character sheet that keeps people consistent across every image.
 CHARACTERS: one line per recurring person, with a fixed description - age, build, hair, skin tone, clothing, distinctive items. If no specific people recur, write "CHARACTERS: none".
 STYLE ANCHOR: one line fixing the shared look - lighting, color palette, camera style, mood.
 
-Rules: under 120 words, plain text, exactly these two section labels, no other commentary."""
+Rules: under 120 words, plain text, exactly these two section labels, no other commentary. Keep every description acceptable to mainstream AI image generators (no sexually explicit or nude imagery, graphic gore, or hateful depictions); only recast a description symbolically if it would breach those rules."""
 
 
 def draft_character_sheet(
