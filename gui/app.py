@@ -29,6 +29,7 @@ from core.llm_translator import (
     AudioTranscription, AudioSegment, TranslatedBeat,
 )
 from core.image_generator import generate_image
+from core.character_sheet import draft_character_sheet, compose_scene_prompt, compose_compact_block
 from agent.stock_sourcer import StockSourcer
 from agent.director_evaluator import DirectorEvaluator
 from agent.workflow import BRollAgentGraph
@@ -1193,10 +1194,56 @@ def build_translator(custom_instructions: str = "") -> LLMTranslator:
     )
 
 
-def step_strip(states):
+def render_character_sheet(project, scenes, gemini_key: str) -> str:
+    """Character sheet + style anchor shared by every scene prompt.
+
+    Drafted once from the selected scenes by the reasoning model, editable,
+    and saved per project - so recurring people keep the same description in
+    every image. Returns the current sheet text ("" when empty).
+    """
+    sheet_key = f"character_sheet_{project.id}"
+    if sheet_key not in st.session_state:
+        st.session_state[sheet_key] = db.get_memory(project.id, "character_sheet") or ""
+
+    st.markdown(
+        '<div class="section-sub"><b>Characters &amp; style</b> - one shared sheet keeps the '
+        'same people looking the same in every image. Draft it from your scenes, then tweak '
+        'anything - it goes into every prompt below.</div>',
+        unsafe_allow_html=True,
+    )
+
+    def _save_sheet():
+        db.set_memory(project.id, "character_sheet", st.session_state[sheet_key])
+
+    if st.button("Draft character sheet from scenes", key=f"draft_sheet_{project.id}",
+                 disabled=not gemini_key):
+        translator = build_translator(project.custom_instructions)
+        scene_lines = [f"{i + 1}. {s}" for i, s in enumerate(scenes)]
+        with st.spinner("Drafting character sheet..."):
+            drafted = draft_character_sheet(
+                translator.generate_text, scene_lines, project.custom_instructions)
+        if drafted:
+            st.session_state[sheet_key] = drafted
+            _save_sheet()
+            st.rerun()
+        else:
+            st.error("The reasoning model returned nothing - check your Gemini key, "
+                     "or write the sheet by hand below.")
+
+    st.text_area(
+        "Character sheet (applies to every image)",
+        key=sheet_key, on_change=_save_sheet, height=120,
+        placeholder=("MOTHER: woman in her 40s, blue cotton saree, shoulder-length black hair in a braid.\n"
+                     "DAUGHTER: girl around 8, pink frock, two ponytails.\n"
+                     "STYLE ANCHOR: warm natural window light, soft tones, cinematic 16:9 still, shallow depth of field."),
+    )
+    return st.session_state[sheet_key]
+
+
+def step_strip(states, labels=None):
     """Render the 4-step create-flow tracker.
     states: list of 4 strings, each 'done', 'active', or 'todo'."""
-    labels = ["Upload media", "Understand speech", "Plan coverage", "Generate images"]
+    labels = labels or ["Upload media", "Understand speech", "Plan coverage", "Generate images"]
     parts = ['<div class="steps">']
     for i, (label, state) in enumerate(zip(labels, states)):
         parts.append(f'<div class="step {state}"><span class="step-num">{i + 1}</span>{label}</div>')
@@ -1334,6 +1381,22 @@ else:
                 st.session_state["gemini_api_key_session"] = key_input.strip()
                 gemini_key = key_input.strip()
 
+        # ── Output mode: generate here, or copy prompts to your own generator ──
+        mode_key = f"output_mode_{project.id}"
+        if mode_key not in st.session_state:
+            st.session_state[mode_key] = db.get_memory(project.id, "output_mode") or "Generate images"
+
+        def _save_mode():
+            db.set_memory(project.id, "output_mode", st.session_state[mode_key])
+
+        mode = st.segmented_control(
+            "Output mode", ["Generate images", "Copy prompts"],
+            key=mode_key, on_change=_save_mode,
+            help=("Generate images: Gemini creates the stills here. "
+                  "Copy prompts: finished prompts to paste into your own image "
+                  "generator - no image generation happens here."),
+        ) or "Generate images"
+
         analysis_key = f"image_analysis_{project.id}"
         images_key = f"generated_images_{project.id}"
         analysis = st.session_state.get(analysis_key)
@@ -1346,7 +1409,9 @@ else:
             bool(generated),
         ]
         _next = next((i for i, d in enumerate(_done) if not d), None)
-        step_strip(["done" if d else ("active" if i == _next else "todo") for i, d in enumerate(_done)])
+        _step4 = "Generate images" if mode == "Generate images" else "Copy prompts"
+        step_strip(["done" if d else ("active" if i == _next else "todo") for i, d in enumerate(_done)],
+                   labels=["Upload media", "Understand speech", "Plan coverage", _step4])
 
         # ── Step 1: source media ──
         st.markdown('<div class="section-eyebrow">Step 1 · Source media</div>', unsafe_allow_html=True)
@@ -1423,6 +1488,18 @@ else:
             coverage_bar(analysis.segments, set(indices))
 
             st.markdown('<div class="section-eyebrow">Step 3 · Scene plan</div>', unsafe_allow_html=True)
+            _scenes = [
+                (analysis.segments[i].visual_description or analysis.segments[i].english_translation
+                 or analysis.segments[i].original_text)
+                for i in indices
+            ]
+            sheet = render_character_sheet(project, _scenes, gemini_key)
+            _snap_key = f"sheet_snapshot_{project.id}"
+            _ver_key = f"sheet_ver_{project.id}"
+            st.session_state.setdefault(_ver_key, 0)
+            if st.session_state.get(_snap_key) != sheet:
+                st.session_state[_snap_key] = sheet
+                st.session_state[_ver_key] += 1
             prompts = []
             for scene_no, index in enumerate(indices, 1):
                 segment = analysis.segments[index]
@@ -1431,45 +1508,73 @@ else:
                     if segment.english_translation and segment.english_translation != segment.original_text:
                         st.markdown(f'<div class="translation-box"><b>English:</b> {segment.english_translation}</div>',
                                     unsafe_allow_html=True)
-                    prompt = st.text_area(
-                        "Image prompt",
-                        value=(f"Create a cinematic 16:9 still image for a video edit. Show {scene}. "
-                               f"Keep the scene visually clear, with no text, logos, or watermarks. "
-                               f"{project.custom_instructions}"),
-                        key=f"scene_prompt_{project.id}_{index}",
-                        height=110,
-                    )
+                    if mode == "Generate images":
+                        prompt = st.text_area(
+                            "Image prompt",
+                            value=compose_scene_prompt(scene, sheet, project.custom_instructions),
+                            key=f"scene_prompt_{project.id}_{index}_gen_v{st.session_state[_ver_key]}",
+                            height=140,
+                        )
+                    else:
+                        prompt = st.text_area(
+                            "Scenario line",
+                            value=scene,
+                            key=f"scene_prompt_{project.id}_{index}_copy_v{st.session_state[_ver_key]}",
+                            height=68,
+                        )
                     prompts.append((segment, prompt))
 
-            if st.button(f"Generate {count} image{'s' if count > 1 else ''} →", type="primary", key="generate_video_images"):
-                created = []
-                with st.status("Generating images", expanded=True) as status:
-                    for segment, prompt in prompts:
-                        try:
-                            output = settings.ASSETS_OUTPUT_DIR / project.id / f"{uuid4().hex}.png"
-                            image_path = generate_image(gemini_key, prompt, output)
-                            db.add_resource(
-                                project_id=project.id, resource_type="image",
-                                title=f"Generated image at {segment.start_time:.0f}s",
-                                file_path=str(image_path),
-                                metadata={"source": "Gemini", "start_time": segment.start_time,
-                                          "end_time": segment.end_time, "prompt": prompt},
-                            )
-                            created.append((segment.start_time, str(image_path)))
-                            st.write(f"Created image for {segment.start_time:.0f}s")
-                        except Exception as exc:
-                            st.error(f"Image at {segment.start_time:.0f}s failed: {exc}")
-                    failed = len(prompts) - len(created)
-                    if failed:
-                        status.update(
-                            label=f"Created {len(created)} of {len(prompts)} images ({failed} failed)",
-                            state="error", expanded=(len(created) == 0))
-                    else:
-                        status.update(label=f"Created {len(created)} of {len(prompts)} images",
-                                      state="complete", expanded=False)
-                st.session_state[images_key] = created
-                if created:
-                    db.add_message(project.id, "assistant", f"Generated {len(created)} images from audio moments.")
+            if mode == "Generate images":
+                use_ref = st.checkbox(
+                    "Use the previous image as a visual reference",
+                    value=True, key=f"use_ref_{project.id}",
+                    help=("Each image after the first is generated with the previous scene's "
+                          "image attached - same people, same style, carried forward."))
+                if st.button(f"Generate {count} image{'s' if count > 1 else ''} →", type="primary", key="generate_video_images"):
+                    created = []
+                    prev_image = None
+                    with st.status("Generating images", expanded=True) as status:
+                        for segment, prompt in prompts:
+                            try:
+                                output = settings.ASSETS_OUTPUT_DIR / project.id / f"{uuid4().hex}.png"
+                                image_path = generate_image(gemini_key, prompt, output,
+                                                            reference_image=prev_image if use_ref else None)
+                                db.add_resource(
+                                    project_id=project.id, resource_type="image",
+                                    title=f"Generated image at {segment.start_time:.0f}s",
+                                    file_path=str(image_path),
+                                    metadata={"source": "Gemini", "start_time": segment.start_time,
+                                              "end_time": segment.end_time, "prompt": prompt},
+                                )
+                                created.append((segment.start_time, str(image_path)))
+                                prev_image = image_path
+                                st.write(f"Created image for {segment.start_time:.0f}s")
+                            except Exception as exc:
+                                st.error(f"Image at {segment.start_time:.0f}s failed: {exc}")
+                                prev_image = None  # a failed scene breaks the reference chain
+                        failed = len(prompts) - len(created)
+                        if failed:
+                            status.update(
+                                label=f"Created {len(created)} of {len(prompts)} images ({failed} failed)",
+                                state="error", expanded=(len(created) == 0))
+                        else:
+                            status.update(label=f"Created {len(created)} of {len(prompts)} images",
+                                          state="complete", expanded=False)
+                    st.session_state[images_key] = created
+                    if created:
+                        db.add_message(project.id, "assistant", f"Generated {len(created)} images from audio moments.")
+            else:
+                st.markdown(
+                    '<div class="section-sub">One block - paste it into your Gemini or ChatGPT chat. '
+                    'The sheet on top carries the same characters through every image.</div>',
+                    unsafe_allow_html=True,
+                )
+                compact_scenes = [
+                    (f"IMAGE {scene_no} ({segment.start_time:.0f}s)", prompt_text)
+                    for scene_no, (segment, prompt_text) in enumerate(prompts, 1)
+                ]
+                st.code(compose_compact_block(compact_scenes, sheet, project.custom_instructions),
+                        language=None)
 
         # ── Step 4: results gallery (images visible on the page) ──
         generated = st.session_state.get(images_key, [])
