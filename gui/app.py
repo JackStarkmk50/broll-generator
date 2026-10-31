@@ -7,10 +7,12 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 import streamlit as st
+import streamlit.components.v1 as components
 import time
 import json
 from datetime import datetime
 from uuid import uuid4
+from dataclasses import asdict
 import numpy as np
 
 from config.settings import settings
@@ -36,67 +38,742 @@ st.set_page_config(
     page_title="Edit Helper",
     page_icon="🎞️",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
-# ─── CSS ──────────────────────────────────────────────────────
-st.markdown("""
-<style>
-    .main { background-color: #151a20; color: #f1f4f8; }
-    .stApp { background-color: #151a20; }
-    [data-testid="stSidebar"] { background-color: #1c232c; }
-    .block-container { max-width: 1160px; padding-top: 2.5rem; }
-    h1, h2, h3 { letter-spacing: -0.035em; }
-    div.stButton > button[kind="primary"] { background: #6daee8; color: #101820; border: 0; }
-    div.stButton > button[kind="primary"]:hover { background: #91c5f2; color: #101820; }
+# ─── Design System ────────────────────────────────────────────
 
-    .hero-container {
-        padding: 0 0 22px;
-        border-bottom: 1px solid #35404c;
-        margin-bottom: 24px;
-    }
-    .hero-title {
-        font-size: 2rem; font-weight: 700; color: #f1f4f8;
-        margin: 0;
-    }
-    .hero-sub { color: #94a3b8; font-size: 0.95rem; margin-top: 4px; }
+_THEMES = {
+    "light": ":root {"
+        "--mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;"
+        "--bg: #FAFAF8; --surface: #FFFFFF; --surface-2: #F4F3EF; --surface-3: #E9E7E1;"
+        "--border: #E4E1DA; --border-strong: #CFCBC0;"
+        "--text: #1B1C1F; --muted: #5B5E65; --faint: #8B8E96;"
+        "--accent: #C2530C; --accent-2: #9E4207;"
+        "--accent-soft: rgba(194,83,12,0.08); --accent-border: rgba(194,83,12,0.34);"
+        "--accent-ink: #FFFFFF; --green: #1C7C4B; --badge-red: #C41E3A; --badge-green: #0E7A55;"
+        "--radius-lg: 14px; --radius-md: 10px; --radius-sm: 6px; }",
+    "dark": ":root {"
+        "--mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;"
+        "--bg: #131417; --surface: #1A1C20; --surface-2: #21242A; --surface-3: #2A2E36;"
+        "--border: rgba(255,255,255,0.09); --border-strong: rgba(255,255,255,0.17);"
+        "--text: #ECEDEF; --muted: #A2A8B1; --faint: #7B818A;"
+        "--accent: #FF8A3D; --accent-2: #FFB27A;"
+        "--accent-soft: rgba(255,138,61,0.10); --accent-border: rgba(255,138,61,0.36);"
+        "--accent-ink: #1F0F03; --green: #34D399; --badge-red: #FF8FA0; --badge-green: #45D99A;"
+        "--radius-lg: 14px; --radius-md: 10px; --radius-sm: 6px; }",
+}
 
-    .project-card {
-        background: rgba(30,41,59,0.6); border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 10px; padding: 12px 16px; margin-bottom: 8px;
-        cursor: pointer; transition: border-color 0.2s;
-    }
-    .project-card:hover { border-color: rgba(99,102,241,0.5); }
+if "theme" not in st.session_state:
+    _qp = st.query_params.get("theme", "light")
+    st.session_state.theme = _qp if _qp in ("light", "dark") else "light"
 
-    .timestamp-badge {
-        display: inline-block; background: rgba(56,189,248,0.15); color: #38bdf8;
-        font-weight: 700; font-size: 0.85rem; padding: 3px 10px;
-        border-radius: 16px; border: 1px solid rgba(56,189,248,0.3); margin-right: 6px;
+_CSS_FONTS = """@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+"""
+
+_CSS_BASE = """@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+
+
+/* ── Canvas ── */
+.stApp, [data-testid="stAppViewContainer"] { background: var(--bg); color: var(--text); }
+[data-testid="stAppViewContainer"] * { font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif; }
+[data-testid="stIconMaterial"], [class*="material-symbols"], [data-testid^="stExpanderIcon"] {
+    font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', sans-serif !important;
+}
+.block-container { max-width: 1080px; padding: 2.2rem 2.5rem 6rem; }
+[data-testid="stHeader"] { background: transparent; }
+#MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden; display: none; }
+[class*="stDeployButton"], [data-testid="stManageAppButton"] { display: none !important; }
+
+h1, h2, h3 { letter-spacing: -0.03em; color: var(--text); }
+p, li { color: var(--muted); }
+hr { border-color: var(--border); margin: 1.6rem 0; }
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"] {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+}
+[data-testid="stSidebar"] .block-container { padding: 1.4rem 1.1rem; }
+
+.brand { display: flex; align-items: center; gap: 12px; padding: 4px 2px 18px; }
+.brand-mark {
+    width: 38px; height: 38px; border-radius: 11px; flex: none;
+    background: var(--accent);
+    color: var(--accent-ink); font-weight: 800; font-size: 15px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 16px rgba(255,122,26,0.35);
+}
+.brand-name { font-weight: 700; font-size: 15.5px; color: var(--text); letter-spacing: -0.02em; }
+.brand-tag { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+
+.side-label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--muted); margin: 18px 2px 8px;
+}
+
+/* Sidebar project list buttons */
+[data-testid="stSidebar"] .stButton > button {
+    width: 100%; border-radius: 10px; border: 1px solid transparent;
+    background: transparent; color: var(--muted);
+    text-align: left; justify-content: flex-start;
+    padding: 8px 12px; font-size: 13.5px; font-weight: 500;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: var(--surface-2); color: var(--text); border-color: transparent;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+    background: var(--accent-soft); color: var(--accent-2);
+    border: 1px solid var(--accent-border);
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+    background: rgba(255,122,26,0.18); color: var(--accent-2);
+}
+
+/* ── Buttons (main) ── */
+.stButton > button, .stDownloadButton > button, .stFormSubmitButton > button {
+    border-radius: 999px; border: 1px solid var(--border-strong);
+    background: var(--surface-2); color: var(--text);
+    font-weight: 600; font-size: 13.5px; padding: 9px 18px;
+    transition: all 0.15s ease;
+}
+.stButton > button:hover, .stDownloadButton > button:hover, .stFormSubmitButton > button:hover {
+    border-color: var(--accent-border); color: var(--accent-2);
+    background: var(--surface-3);
+}
+.stButton > button[kind="primary"], .stFormSubmitButton > button[kind="primary"] {
+    background: var(--accent);
+    border: none; color: var(--accent-ink);
+    box-shadow: none;
+}
+.stButton > button[kind="primary"]:hover, .stFormSubmitButton > button[kind="primary"]:hover {
+    background: var(--accent-2);
+    color: var(--accent-ink); transform: none;
+    box-shadow: none;
+}
+.stButton > button:disabled { opacity: 0.45; }
+
+/* ── Navigation (desktop underline bar + mobile page picker) ── */
+.st-key-nav_seg { margin-bottom: 26px; }
+.st-key-nav_seg [role="radiogroup"] {
+    background: transparent !important; border: none !important; border-radius: 0 !important;
+    border-bottom: 1px solid var(--border) !important;
+    padding: 0 !important; gap: 30px !important; width: 100% !important;
+    box-shadow: none !important;
+}
+.st-key-nav_seg [role="radiogroup"] button {
+    background: transparent !important; border: none !important; border-radius: 0 !important;
+    box-shadow: none !important; margin: 0 !important; padding: 0 !important;
+    min-height: 0 !important; height: auto !important;
+}
+.st-key-nav_seg [role="radiogroup"] button > div {
+    background: transparent !important; border-radius: 0 !important; box-shadow: none !important;
+    padding: 11px 2px 12px !important; margin: 0 !important;
+    border-bottom: 3px solid transparent !important;
+}
+.st-key-nav_seg [role="radiogroup"] button p {
+    color: var(--muted) !important; font-weight: 600 !important; font-size: 15px !important;
+    letter-spacing: 0.01em !important;
+}
+.st-key-nav_seg [role="radiogroup"] button:hover { background: transparent !important; }
+.st-key-nav_seg [role="radiogroup"] button:hover p { color: var(--text) !important; }
+.st-key-nav_seg [role="radiogroup"] button[data-selected="true"] > div {
+    border-bottom-color: var(--accent) !important; background: transparent !important;
+}
+.st-key-nav_seg [role="radiogroup"] button[data-selected="true"] p {
+    color: var(--text) !important;
+}
+/* mobile: labelled page picker replaces the bar */
+.st-key-nav_sel { display: none; }
+@media (max-width: 700px) {
+    .st-key-nav_seg { display: none; }
+    .st-key-nav_sel { display: block; margin-bottom: 22px; }
+    .st-key-nav_sel [data-testid="stWidgetLabel"] p {
+        font-size: 14px !important; font-weight: 600 !important; color: var(--muted) !important;
     }
-    .duration-badge {
-        display: inline-block; background: rgba(168,85,247,0.15); color: #c084fc;
-        font-weight: 600; font-size: 0.8rem; padding: 3px 8px;
-        border-radius: 16px; border: 1px solid rgba(168,85,247,0.3);
-    }
-    .transcript-box {
-        background: rgba(15,23,42,0.7); border-left: 4px solid #6366f1;
-        padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 10px 0 14px 0;
-        font-size: 1rem; line-height: 1.4; color: #e2e8f0;
-    }
-    .metric-pill {
-        display: inline-block; font-size: 0.78rem; padding: 2px 7px;
-        border-radius: 5px; margin-right: 5px;
-        background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
-    }
-    .source-badge {
-        display: inline-block; font-size: 0.72rem; padding: 2px 8px;
-        border-radius: 10px; font-weight: 600; margin-left: 4px;
-    }
-    .source-pinterest { background: rgba(230,0,35,0.2); color: #e60023; border: 1px solid rgba(230,0,35,0.3); }
-    .source-pexels { background: rgba(5,185,125,0.2); color: #05b97d; border: 1px solid rgba(5,185,125,0.3); }
-    .source-fallback { background: rgba(255,255,255,0.1); color: #94a3b8; border: 1px solid rgba(255,255,255,0.15); }
-</style>
-""", unsafe_allow_html=True)
+}
+
+/* ── Inputs ── */
+[data-testid="stTextInput"] input, [data-testid="stNumberInput"] input,
+[data-testid="stSelectbox"] > div > div, textarea {
+    background: var(--surface-2) !important; border: 1px solid var(--border) !important;
+    border-radius: var(--radius-md) !important; color: var(--text) !important;
+}
+[data-testid="stTextInput"] input:focus, textarea:focus,
+[data-testid="stSelectbox"] > div > div:focus-within {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px rgba(255,122,26,0.18) !important;
+}
+[data-testid="stTextInput"] label, [data-testid="stNumberInput"] label,
+[data-testid="stSelectbox"] label, [data-testid="stFileUploader"] label,
+.stTextArea label, [data-testid="stRadio"] label, [data-testid="stCheckbox"] label,
+[data-testid="stSlider"] label {
+    color: var(--muted) !important; font-size: 12.5px !important; font-weight: 600 !important;
+}
+
+/* ── File uploader ── */
+[data-testid="stFileUploaderDropzone"] {
+    background: var(--surface); border: 1.5px dashed var(--border-strong) !important;
+    border-radius: var(--radius-lg); padding: 28px;
+}
+[data-testid="stFileUploaderDropzone"]:hover, [data-testid="stFileUploaderDropzone"]:focus-within { border-color: var(--accent-border) !important; }
+[data-testid="stFileUploaderDropzone"] button {
+    border-radius: 999px; border: 1px solid var(--border-strong);
+    background: var(--surface-3); color: var(--text); font-weight: 600;
+}
+
+/* ── Expanders / cards ── */
+[data-testid="stExpander"] {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); overflow: hidden;
+}
+[data-testid="stExpander"] summary { padding: 14px 18px; font-weight: 600; color: var(--text); }
+[data-testid="stExpander"] summary:hover { color: var(--accent-2); }
+[data-testid="stExpander"] [data-testid="stExpanderDetails"] { padding: 4px 18px 16px; }
+
+[data-testid="stStatusWidget"] {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
+
+/* ── Progress ── */
+[data-testid="stProgress"] > div > div { background: var(--surface-3); border-radius: 999px; }
+[data-testid="stProgress"] > div > div > div {
+    background: var(--accent); border-radius: 999px;
+}
+
+/* ── Alerts ── */
+[data-testid="stAlert"] {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-md); color: var(--muted);
+}
+
+/* ── Chat ── */
+[data-testid="stChatMessage"] {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 12px 16px;
+}
+
+/* ── Hero & product components ── */
+.hero { padding: 34px 0 30px; }
+.hero-eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11.5px; font-weight: 700; letter-spacing: 0.13em; text-transform: uppercase;
+    color: var(--accent-2); background: var(--accent-soft);
+    border: 1px solid var(--accent-border); border-radius: 999px; padding: 6px 14px;
+    margin-bottom: 20px;
+}
+.pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.hero-title {
+    font-family: 'Inter', -apple-system, sans-serif; font-weight: 800;
+    font-size: 3.1rem; line-height: 1.06; color: var(--text); margin: 0 0 14px;
+    letter-spacing: -0.04em;
+}
+.hero-title em { font-style: italic; color: var(--accent-2); }
+.hero-sub { font-size: 1.06rem; line-height: 1.65; color: var(--muted); max-width: 640px; margin: 0; }
+
+.page-head { padding: 6px 0 22px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+.page-head h1 {
+    font-family: 'Inter', -apple-system, sans-serif; font-weight: 800;
+    font-size: 1.9rem; margin: 0; color: var(--text); letter-spacing: -0.035em;
+}
+.page-head p { color: var(--muted); font-size: 0.95rem; margin: 6px 0 0; }
+
+.section-eyebrow {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent-2); margin: 30px 0 6px;
+}
+.section-title { font-size: 1.28rem; font-weight: 700; color: var(--text); margin: 0 0 4px; letter-spacing: -0.02em; }
+.section-sub { color: var(--muted); font-size: 0.92rem; margin: 0 0 16px; }
+
+.card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 20px 22px; margin-bottom: 14px;
+}
+
+/* Step strip */
+.steps { display: flex; align-items: center; gap: 10px; margin: 4px 0 26px; flex-wrap: wrap; }
+.step {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-size: 12.5px; font-weight: 600; color: var(--muted);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 999px; padding: 7px 14px 7px 8px;
+}
+.step-num {
+    width: 22px; height: 22px; border-radius: 50%; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface-3); color: var(--muted); font-size: 11px; font-weight: 700;
+}
+.step.active { color: var(--text); border-color: var(--accent-border); background: var(--accent-soft); }
+.step.active .step-num { background: linear-gradient(135deg, #FF9440, #FF5E0E); color: var(--accent-ink); }
+.step.done { color: var(--muted); border-color: var(--border); }
+.step.done .step-num { background: rgba(52,211,153,0.15); color: var(--green); }
+.step-line { width: 22px; height: 1px; background: var(--border-strong); flex: none; }
+
+/* Badges & pills */
+.timestamp-badge {
+    display: inline-block; background: var(--accent-soft); color: var(--accent-2);
+    font-weight: 700; font-size: 12px; padding: 4px 11px;
+    border-radius: 999px; border: 1px solid var(--accent-border); margin-right: 6px;
+}
+.duration-badge {
+    display: inline-block; background: var(--surface-3); color: var(--muted);
+    font-weight: 600; font-size: 11.5px; padding: 4px 10px;
+    border-radius: 999px; border: 1px solid var(--border);
+}
+.transcript-box {
+    background: var(--surface-2); border-left: 3px solid var(--accent);
+    padding: 12px 16px; border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    margin: 12px 0 14px; font-size: 0.98rem; line-height: 1.55; color: var(--text);
+}
+.translation-box {
+    background: rgba(52,211,153,0.07); border-left: 3px solid var(--green);
+    padding: 10px 14px; border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    margin-bottom: 12px; font-size: 0.9rem; color: #A7D8C4;
+}
+.metric-pill {
+    display: inline-block; font-size: 11.5px; font-weight: 600; padding: 3px 9px;
+    border-radius: 999px; margin-right: 5px;
+    background: var(--surface-3); border: 1px solid var(--border); color: var(--muted);
+}
+.source-badge {
+    display: inline-block; font-size: 10.5px; padding: 3px 9px;
+    border-radius: 999px; font-weight: 700; letter-spacing: 0.06em; margin-left: 4px;
+}
+.source-pinterest { background: rgba(230,0,35,0.10); color: var(--badge-red); border: 1px solid rgba(230,0,35,0.38); }
+.source-pexels { background: rgba(5,185,125,0.10); color: var(--badge-green); border: 1px solid rgba(5,185,125,0.38); }
+.source-fallback { background: var(--surface-3); color: var(--muted); border: 1px solid var(--border); }
+.source-gemini { background: var(--accent-soft); color: var(--accent-2); border: 1px solid var(--accent-border); }
+
+/* Feature cards (landing) */
+.feat-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 20px; height: 100%;
+    transition: border-color 0.15s ease;
+}
+.feat-card:hover { border-color: var(--accent-border); }
+.feat-num {
+    font-family: 'Instrument Serif', Georgia, serif !important; font-style: italic;
+    font-size: 1.6rem; color: var(--accent-2); line-height: 1;
+}
+.feat-title { font-weight: 700; font-size: 0.98rem; color: var(--text); margin: 10px 0 6px; }
+.feat-desc { font-size: 0.85rem; color: var(--muted); line-height: 1.55; margin: 0; }
+
+/* Project cards (landing) */
+.proj-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 18px 20px;
+}
+.proj-name { font-weight: 700; font-size: 1rem; color: var(--text); }
+.proj-meta { font-size: 12px; color: var(--muted); margin-top: 5px; }
+
+/* Gallery caption chip */
+.img-chip {
+    display: inline-block; background: var(--accent-soft); color: var(--accent-2);
+    font-size: 11px; font-weight: 700; border: 1px solid var(--accent-border);
+    padding: 3px 10px; border-radius: 999px; margin-bottom: 6px;
+}
+
+.stButton > button[kind="primary"] p, .stButton > button[kind="primary"] span,
+.stButton > button[kind="primary"] div, .stFormSubmitButton > button[kind="primary"] p {
+    color: var(--accent-ink) !important; opacity: 1 !important;
+}
+
+.note-box {
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-left: 2px solid var(--accent); border-radius: 10px;
+    padding: 13px 18px; color: var(--text); font-size: 14px; margin: 6px 0 10px;
+}
+
+/* Disabled actions */
+.stButton > button:disabled, .stFormSubmitButton > button:disabled {
+    background: var(--surface-3) !important; color: var(--faint) !important;
+    border: 1px solid var(--border) !important; opacity: 1 !important;
+}
+
+/* Images */
+[data-testid="stImage"] img { border-radius: var(--radius-md); border: 1px solid var(--border); }
+/* ----------------------------------------------------------
+   v2 - editorial post-production tool direction.
+   De-slop pass: no glows, no gradients, no lift-on-hover,
+   hierarchy from type + hairlines, mono for time/data.
+   ---------------------------------------------------------- */
+
+/* no decorative glow or lift anywhere */
+.stButton > button, .stButton > button:hover, .stButton > button:active,
+.stDownloadButton > button, .stDownloadButton > button:hover,
+.stFormSubmitButton > button, .stFormSubmitButton > button:hover,
+.brand-mark, .pulse-dot, .proj-card, .proj-card:hover, .feat-card,
+.img-chip, .metric-pill, .step, .step-num, .hero-eyebrow {
+    box-shadow: none !important;
+}
+.stButton > button:hover, .stDownloadButton > button:hover,
+.stFormSubmitButton > button:hover, .proj-card:hover {
+    transform: none !important;
+}
+
+/* step strip: flat editorial tracker, not pills */
+.step {
+    border: none !important; background: transparent !important;
+    padding: 4px 2px !important; font-size: 12.5px !important; font-weight: 500 !important;
+}
+.step.active { background: transparent !important; color: var(--accent-2) !important; }
+.step-num {
+    background: transparent !important; border: 1px solid var(--border-strong) !important;
+    color: var(--muted) !important; border-radius: 6px !important;
+    font-family: var(--mono) !important; font-size: 11px !important; font-weight: 500 !important;
+    width: 24px !important; height: 24px !important;
+}
+.step.active .step-num {
+    background: var(--accent) !important; border-color: var(--accent) !important;
+    color: var(--accent-ink) !important;
+}
+.step.done .step-num { border-color: var(--accent-border) !important; color: var(--accent-2) !important; }
+.step-line { background: var(--border-strong) !important; height: 1px !important; }
+
+/* hero: plain grotesque, no serif-italic accent */
+.hero-title em { font-family: inherit !important; font-style: normal !important; color: var(--accent) !important; }
+.hero-eyebrow {
+    font-family: var(--mono) !important; font-size: 11px !important; font-weight: 500 !important;
+    letter-spacing: 0.05em !important; color: var(--muted) !important;
+    background: var(--surface) !important; border: 1px solid var(--border) !important;
+    border-radius: 6px !important; padding: 5px 10px !important;
+}
+.pulse-dot { width: 6px !important; height: 6px !important; border-radius: 2px !important; }
+
+/* quiet section labels */
+.section-eyebrow {
+    color: var(--muted) !important; font-size: 11px !important;
+    letter-spacing: 0.09em !important; font-weight: 600 !important;
+}
+
+/* feature list: hairline structure instead of cards */
+.feat-card {
+    background: transparent !important; border: none !important;
+    border-top: 1px solid var(--border-strong) !important; border-radius: 0 !important;
+    padding: 16px 16px 4px 0 !important;
+}
+.feat-num { font-family: var(--mono) !important; font-weight: 500 !important; font-size: 12px !important; color: var(--accent-2) !important; }
+.feat-title { font-size: 15px !important; letter-spacing: -0.01em !important; }
+.feat-desc { font-size: 13px !important; line-height: 1.6 !important; }
+
+/* project rows: quieter meta */
+.proj-card { border-radius: 10px !important; }
+.proj-meta { font-family: var(--mono) !important; font-size: 11px !important; letter-spacing: 0 !important; }
+
+/* page head as a workspace title bar */
+.page-head { border-bottom: 1px solid var(--border) !important; padding-bottom: 16px !important; margin-bottom: 6px !important; }
+.page-head p { font-family: var(--mono) !important; font-size: 12px !important; }
+
+/* chips/badges: mono, squared, bordered (not tinted pills) */
+.img-chip {
+    font-family: var(--mono) !important; font-size: 11px !important; font-weight: 500 !important;
+    letter-spacing: 0 !important; text-transform: none !important;
+    border-radius: 6px !important; padding: 4px 9px !important;
+    background: var(--surface-2) !important; color: var(--accent-2) !important;
+    border: 1px solid var(--accent-border) !important;
+}
+.timestamp-badge, .duration-badge { font-family: var(--mono) !important; border-radius: 6px !important; letter-spacing: 0 !important; }
+.metric-pill { font-family: var(--mono) !important; border-radius: 6px !important; letter-spacing: 0 !important; }
+.source-badge { border-radius: 5px !important; font-family: var(--mono) !important; text-transform: none !important; letter-spacing: 0 !important; }
+.translation-box { border-left-width: 2px !important; border-radius: 6px !important; }
+
+/* tighter radii overall */
+.feat-card, .proj-card, .transcript-box { border-radius: 10px !important; }
+
+
+/* contrast + native-widget fixes (both themes) */
+.translation-box { color: var(--text) !important; }
+.translation-box b { color: var(--text) !important; }
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] summary:hover,
+[data-testid="stExpander"] summary:focus,
+[data-testid="stExpander"] summary[aria-expanded="true"] {
+    background: transparent !important; color: var(--text) !important;
+}
+[data-testid="stExpander"] summary:hover { background: var(--surface-2) !important; }
+[data-testid="stAlert"] {
+    background: var(--surface-2) !important; color: var(--text) !important;
+    border: 1px solid var(--border) !important; border-radius: 10px !important;
+}
+[data-testid="stAlert"] * { color: var(--text) !important; }
+[data-testid="stAlertContentInfo"], [data-testid="stAlertContentWarning"],
+[data-testid="stAlertContentSuccess"], [data-testid="stAlertContentError"] {
+    background: transparent !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"] p,
+[data-testid="stSidebar"] .stButton > button[kind="primary"] span,
+[data-testid="stSidebar"] .stButton > button[kind="primary"] div {
+    color: var(--accent-2) !important;
+}
+
+/* contrast repair: Streamlit's compiled light theme leaks into a few controls in dark mode */
+/* 1. disabled primary buttons: descendants were keeping accent-ink (near-black on dark) */
+.stButton > button[kind="primary"]:disabled, .stFormSubmitButton > button[kind="primary"]:disabled {
+    background: var(--surface-3) !important; border: 1px solid var(--border) !important; opacity: 1 !important;
+}
+.stButton > button[kind="primary"]:disabled p, .stButton > button[kind="primary"]:disabled span,
+.stButton > button[kind="primary"]:disabled div,
+.stFormSubmitButton > button[kind="primary"]:disabled p, .stFormSubmitButton > button[kind="primary"]:disabled span,
+.stFormSubmitButton > button[kind="primary"]:disabled div {
+    color: var(--faint) !important;
+}
+/* 2. secondary buttons: background could fall back to white with light text on it.
+   Buttons with help= are wrapped in stTooltipHoverTarget, so child selectors miss them. */
+.stButton button[kind="secondary"], .stDownloadButton button,
+.stFormSubmitButton button[kind="secondaryFormSubmit"] {
+    background: var(--surface-2) !important; color: var(--text) !important;
+    border: 1px solid var(--border-strong) !important; border-radius: 999px !important;
+}
+.stButton button[kind="secondary"]:hover, .stDownloadButton button:hover,
+.stFormSubmitButton button[kind="secondaryFormSubmit"]:hover {
+    background: var(--surface-3) !important; border-color: var(--accent-border) !important; color: var(--accent-2) !important;
+}
+/* 4. number-input steppers + chat submit: light-theme icon fallback */
+[data-testid="stNumberInputStepDown"], [data-testid="stNumberInputStepUp"] {
+    background: var(--surface-2) !important; color: var(--muted) !important;
+}
+[data-testid="stChatInputSubmitButton"] {
+    background: var(--surface-2) !important; color: var(--muted) !important;
+}
+
+/* audit repair: inputs, selectbox, slider, chips, links - pin Streamlit's compiled
+   light-theme fallbacks to theme tokens. Focus indicators preserved. */
+[data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea,
+[data-testid="stNumberInput"] input {
+    background: var(--surface-2) !important; color: var(--text) !important;
+    border: 1px solid var(--border) !important; caret-color: var(--text) !important;
+}
+[data-testid="stTextInput"] input:hover, [data-testid="stTextArea"] textarea:hover,
+[data-testid="stNumberInput"] input:hover { border-color: var(--border-strong) !important; }
+[data-testid="stTextInput"] input::placeholder, [data-testid="stTextArea"] textarea::placeholder { font-style: italic !important;
+    color: var(--faint) !important; opacity: 1 !important;
+}
+[data-testid="stTextInput"] input:focus, [data-testid="stTextArea"] textarea:focus,
+[data-testid="stNumberInput"] input:focus {
+    border-color: var(--accent) !important; box-shadow: 0 0 0 1px var(--accent) !important;
+}
+[data-testid="stTextInputRootElement"], [data-testid="stTextAreaRootElement"],
+[data-testid="stNumberInputContainer"] {
+    background: var(--surface-2) !important; border-color: var(--border) !important;
+    border-radius: 10px !important;
+}
+[data-testid="stTextInputRootElement"]:focus-within, [data-testid="stTextAreaRootElement"]:focus-within,
+[data-testid="stNumberInputContainer"]:focus-within, .react-aria-TextField:focus-within {
+    border-color: var(--accent) !important; box-shadow: 0 0 0 1px var(--accent) !important;
+}
+[data-testid="stSelectbox"] input[role="combobox"], [data-testid="stMultiSelect"] input[role="combobox"] {
+    background: var(--surface-2) !important; color: var(--text) !important;
+    border: 1px solid var(--border) !important; border-radius: 10px !important;
+    caret-color: var(--text) !important;
+}
+[data-testid="stSelectbox"] input[role="combobox"]::placeholder,
+[data-testid="stMultiSelect"] input[role="combobox"]::placeholder { color: var(--faint) !important; opacity: 1 !important; }
+[data-testid="stSelectbox"] .react-aria-ComboBox button, [data-testid="stMultiSelect"] button {
+    background: transparent !important; border: none !important; color: var(--muted) !important;
+}
+[data-testid="stSelectbox"] .react-aria-ComboBox svg, [data-testid="stMultiSelect"] svg { fill: var(--muted) !important; }
+[data-baseweb="select"] > div {
+    background: var(--surface-2) !important; border-color: var(--border-strong) !important;
+}
+[data-baseweb="select"] > div *, [data-baseweb="select"] input { color: var(--text) !important; }
+[data-baseweb="select"] svg { fill: var(--muted) !important; }
+[data-baseweb="popover"] [data-baseweb="menu"], [role="listbox"] {
+    background: var(--surface) !important; border: 1px solid var(--border) !important;
+}
+[data-baseweb="menu"] li, [role="listbox"] li, [role="option"] { color: var(--text) !important; background: transparent !important; }
+[data-baseweb="menu"] li:hover, [role="option"]:hover { background: var(--surface-2) !important; }
+[data-testid="stSlider"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stSlider"] [data-testid="stThumbValue"],
+[data-testid="stSlider"] span { color: var(--text) !important; }
+[data-testid="stSlider"] [data-testid="stSliderThumbValue"],
+[data-testid="stSlider"] [data-testid="stSliderThumbValue"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stSlider"] [data-testid="stSliderThumbValue"] p {
+    background: var(--surface-3) !important; color: var(--text) !important;
+}
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: var(--muted) !important; }
+code {
+    background: var(--surface-3) !important; color: var(--text) !important;
+    border-radius: 5px !important; padding: 2px 7px !important; font-size: 0.88em !important;
+    font-weight: 500 !important;
+}
+.stMarkdown a, [data-testid="stCaptionContainer"] a { color: var(--accent-2) !important; }
+
+/* audit repair round 2: chat input, avatars, collapse control, widget labels */
+[data-testid="stBottom"] { background: var(--bg) !important; }
+[data-testid="stChatInput"] {
+    background: var(--surface-2) !important; border: 1px solid var(--border-strong) !important;
+    border-radius: 12px !important;
+}
+[data-testid="stChatInput"] > div { background: transparent !important; }
+[data-testid="stChatInputSubmitButton"] button, [data-testid="stChatInput"] button[kind="headerNoPadding"] {
+    background: var(--accent) !important; color: var(--accent-ink) !important; border: none !important;
+}
+[data-testid="stChatInputSubmitButton"] svg, [data-testid="stChatInput"] button svg { fill: var(--accent-ink) !important; }
+[data-testid="stChatInput"] textarea {
+    background: transparent !important; color: var(--text) !important; caret-color: var(--text) !important;
+}
+[data-testid="stChatInput"] textarea::placeholder { color: var(--faint) !important; opacity: 1 !important; }
+[data-testid="stChatInput"]:focus-within { border-color: var(--accent) !important; }
+[data-testid^="stChatMessageAvatar"] {
+    background: var(--surface-3) !important; color: var(--muted) !important;
+    border: 1px solid var(--border) !important; border-radius: 8px !important;
+}
+[data-testid^="stChatMessageAvatar"] svg { fill: var(--muted) !important; color: var(--muted) !important; }
+[data-testid="stSidebarCollapseButton"] button, [data-testid="collapsedControl"] button {
+    color: var(--muted) !important; background: var(--surface) !important;
+    border: 1px solid var(--border) !important; border-radius: 8px !important;
+}
+[data-testid="stSidebarCollapseButton"] svg, [data-testid="collapsedControl"] svg { fill: var(--muted) !important; }
+[data-testid="stWidgetLabel"] p, [data-testid="stWidgetLabel"] span { color: var(--muted) !important; }
+[data-testid="stTooltipIcon"] { color: var(--muted) !important; }
+/* help "?" icon buttons only: they have no kind attribute. Regular buttons with
+   help= are also wrapped in stTooltipIcon/stTooltipHoverTarget - do not restyle those. */
+[data-testid="stTooltipIcon"] [data-testid="stTooltipHoverTarget"] button:not([kind]),
+[data-testid="stTooltipIcon"] button:not([kind]) {
+    background: transparent !important; border: none !important; box-shadow: none !important;
+    color: var(--muted) !important;
+}
+[data-testid="stTooltipIcon"] [data-testid="stTooltipHoverTarget"] button:not([kind]):hover,
+[data-testid="stTooltipIcon"] button:not([kind]):hover { color: var(--text) !important; background: var(--surface-3) !important; }
+[data-testid="stTooltipIcon"] button:not([kind]) svg, [data-testid="stTooltipIcon"] svg {
+    stroke: var(--muted) !important; fill: none !important; color: var(--muted) !important;
+}
+
+/* audit repair round 3: uploader chip, password eye, steppers, avatar, focus rings */
+[data-testid="stFileChip"] {
+    background: var(--surface-2) !important; border: 1px solid var(--border) !important;
+    border-radius: 10px !important; color: var(--muted) !important;
+}
+[data-testid="stFileChip"] * { color: var(--muted) !important; }
+[data-testid="stFileChipName"] { color: var(--text) !important; font-weight: 600 !important; }
+[data-testid="stFileChip"] button, [data-testid="stFileChipDeleteBtn"] button {
+    background: transparent !important; border: none !important; color: var(--muted) !important;
+}
+[data-testid="stFileUploaderDropzone"] button[kind="borderlessIcon"] {
+    background: var(--surface-3) !important; border: 1px solid var(--border) !important;
+    color: var(--muted) !important; border-radius: 8px !important;
+}
+[data-testid="stTextInput"] button {
+    background: transparent !important; border: none !important; color: var(--muted) !important;
+}
+[data-testid="stTextInput"] button svg { stroke: var(--muted) !important; }
+[data-testid="stNumberInput"] button {
+    background: var(--surface-3) !important; color: var(--text) !important; border: none !important;
+}
+[data-testid="stNumberInput"] [data-testid="stNumberInputContainer"] button svg { fill: var(--text) !important; }
+[data-testid="stNumberInput"] [data-testid="stTooltipIcon"] button svg {
+    fill: none !important; stroke: var(--muted) !important; color: var(--muted) !important;
+}
+[data-testid="stChatMessage"] > div:first-child {
+    background: var(--surface-3) !important; border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+}
+[data-testid="stSidebarCollapsedControl"] button, [data-testid="stSidebarCollapsedControl"] svg {
+    color: var(--muted) !important; fill: var(--muted) !important;
+}
+/* consistent theme-accent keyboard focus across all interactive elements */
+*:focus-visible {
+    outline: 2px solid var(--accent) !important; outline-offset: 1px !important;
+    box-shadow: none !important;
+}
+
+/* theme radio in sidebar: square segmented look */
+[data-testid="stSidebar"] [data-testid="stRadio"] label { font-family: var(--mono) !important; font-size: 12px !important; }
+
+/* v9: toasts, tooltip/popover surfaces, dropzone hover/drag, code tokens */
+
+/* toasts: themed surface + text (compiled light theme leaked white boxes) */
+[data-testid="stToastContainer"] > div,
+[data-baseweb="toast"],
+[data-testid="stToast"] {
+    background: var(--surface-2) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border-strong) !important;
+    box-shadow: none !important;
+}
+[data-testid="stToast"] *, [data-baseweb="toast"] * {
+    background: transparent !important;
+    color: var(--text) !important;
+}
+
+/* tooltip + popover wrapper surfaces */
+[data-testid="stTooltipContent"],
+[data-baseweb="tooltip"],
+[data-baseweb="tooltip"] > div,
+[data-baseweb="popover"] > div {
+    background: var(--surface-3) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border-strong) !important;
+    box-shadow: none !important;
+}
+[data-testid="stTooltipContent"] *, [data-baseweb="tooltip"] * {
+    background: transparent !important;
+    color: var(--text) !important;
+}
+
+/* file uploader: hover / drag / focus-within stay themed */
+[data-testid="stFileUploaderDropzone"],
+[data-testid="stFileUploaderDropzone"]:hover,
+[data-testid="stFileUploaderDropzone"]:focus-within {
+    background: var(--surface-2) !important;
+}
+[data-testid="stFileUploaderDropzone"] * { color: var(--muted) !important; }
+[data-testid="stFileUploaderDropzone"] button { color: var(--text) !important; }
+
+/* code blocks: base surface + readable token colors in both themes
+   (keys accent-2 5.9/9+, strings green 4.7/8.1, numbers accent-2,
+    punctuation/base muted/text, all >=4.5 on surface-2) */
+[data-testid="stCode"], [data-testid="stCode"] pre, [data-testid="stCode"] pre code {
+    background: var(--surface-2) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+}
+[data-testid="stCode"] pre span { color: var(--text) !important; }
+[data-testid="stCode"] .hljs-attr, [data-testid="stCode"] .hljs-attribute,
+[data-testid="stCode"] .hljs-name, [data-testid="stCode"] .token.attr-name,
+[data-testid="stCode"] .token.property { color: var(--accent-2) !important; }
+[data-testid="stCode"] .hljs-string, [data-testid="stCode"] .token.string { color: var(--green) !important; }
+[data-testid="stCode"] .hljs-number, [data-testid="stCode"] .token.number { color: var(--accent-2) !important; }
+[data-testid="stCode"] .hljs-literal, [data-testid="stCode"] .hljs-keyword,
+[data-testid="stCode"] .token.boolean, [data-testid="stCode"] .token.keyword,
+[data-testid="stCode"] .hljs-punctuation, [data-testid="stCode"] .token.punctuation,
+[data-testid="stCode"] .token.operator { color: var(--muted) !important; }
+
+/* v10 */
+/* find-stock media type caption beside source badge (was inline #9AA3AF, 2.44:1 light) */
+.media-type-tag { color: var(--muted) !important; font-size: 0.8rem; }
+
+/* dropzone drag-active: Streamlit swaps a class that repaints the inner wrapper
+   light; force all inner layers transparent so the themed section surface shows */
+[data-testid="stFileUploaderDropzone"] > div,
+[data-testid="stFileUploaderDropzone"] > div * { background-color: transparent !important; }
+[data-testid="stFileUploaderDropzone"] > div button {
+    background-color: var(--surface-3) !important;
+    border: 1px solid var(--border-strong) !important;
+    color: var(--text) !important;
+}
+/* drag-active inserts a "Drag and drop a file here" div before the limits line;
+   Streamlit hides the limits line by color, which our muted-text guard defeats -
+   hide it structurally and give the drag instruction full text color */
+[data-testid="stFileUploaderDropzone"] > div:not(:only-of-type) ~ div { visibility: hidden !important; }
+[data-testid="stFileUploaderDropzone"] > div:not(:only-of-type) span { color: var(--text) !important; font-weight: 600 !important; }
+/* quiet back-to-landing text button in the sidebar */
+.st-key-back_to_landing .stButton button {
+    background: transparent !important; border: none !important; box-shadow: none !important;
+    color: var(--muted) !important; font-size: 12.5px !important; font-weight: 500 !important;
+    padding: 0 !important; min-height: 0 !important; height: auto !important;
+}
+.st-key-back_to_landing .stButton button:hover { color: var(--accent-2) !important; background: transparent !important; }
+"""
+
+st.markdown(
+    "<style>" + _CSS_FONTS + _THEMES[st.session_state.theme] + _CSS_BASE + "</style>",
+    unsafe_allow_html=True,
+)
+
 
 # ─── Database ─────────────────────────────────────────────────
 db = get_db()
@@ -122,14 +799,207 @@ def get_active_project():
     return None
 
 
+# ─── Landing (entry view) ─────────────────────────────────────
+# Ported from the approved Toolcraft concept (v2): fixed dark palette, orange
+# accent, waveform hero where pictures develop at key moments. "Try it" enters
+# the real app; the sidebar gets a quiet way back.
+
+_LND_ORANGE = "#FF8A3D"
+
+_LANDING_CSS = """
+<style>
+/* landing-only chrome: full-bleed dark page, no sidebar */
+[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"],
+[data-testid="stHeader"] { display: none !important; }
+.stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] { background: #0c0b0d !important; }
+[data-testid="stMainBlockContainer"] { max-width: 1180px !important; padding-top: 10px !important; }
+.lnd { color: #f3efe9; font-family: 'Inter', sans-serif; }
+.lnd-brand { font-weight: 700; font-size: 16px; padding: 12px 0 4px; }
+.lnd-brand b { color: #FF8A3D; font-weight: 700; }
+.lnd-eyebrow { color: #FF8A3D; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; margin: 26px 0 14px; }
+.lnd h1 { font-size: clamp(32px, 5.4vw, 66px); line-height: 1.02; letter-spacing: -0.04em; font-weight: 700; max-width: 860px; margin: 0; color: #f3efe9; }
+.lnd-sub { max-width: 580px; margin: 20px 0 6px; font-size: 17px; line-height: 1.5; color: #bdb6ad; }
+.lnd-cta-note { color: #9a9389; font-size: 14px; margin-top: -6px; }
+.lnd-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 24px; padding: 26px 0 20px; }
+.lnd-step { border-top: 1px solid rgba(255,255,255,0.18); padding-top: 14px; }
+.lnd-step-t { font-weight: 600; font-size: 17px; color: #f3efe9; }
+.lnd-step-d { color: #aaa398; margin-top: 4px; line-height: 1.5; font-size: 15px; }
+.st-key-landing_try .stButton button {
+    background: #FF8A3D !important; color: #1a0e05 !important; border: none !important;
+    border-radius: 999px !important; padding: 13px 30px !important; font-weight: 700 !important;
+    font-size: 16px !important; min-height: 0 !important; height: auto !important;
+}
+.st-key-landing_try .stButton button:hover { background: #ff9a57 !important; }
+.st-key-landing_try .stButton button p, .st-key-landing_try .stButton button span {
+    color: #1a0e05 !important; font-weight: 700 !important; font-size: 16px !important;
+}
+.st-key-landing_try .stButton button:focus-visible { outline: 2px solid #ffd2b0 !important; outline-offset: 2px !important; }
+</style>
+"""
+
+# Hero: vanilla-JS port of the concept's canvas (React wrapper removed, draw
+# logic unchanged). Honors prefers-reduced-motion with the finished state.
+_LANDING_HERO_HTML = r"""<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;padding:0;background:#0c0b0d;}
+canvas{width:100%;height:440px;display:block;}
+</style></head><body>
+<canvas id="hero" role="img" aria-label="Animation: a talk's waveform where five pictures develop at its key moments"></canvas>
+<script>
+const ORANGE = "#FF8A3D";
+const KEYS = [0.1, 0.3, 0.5, 0.7, 0.9];
+const LABELS = ["the opening idea", "the turn", "the story", "the lesson", "the close"];
+const TIMES = ["0:08", "0:31", "0:57", "1:24", "1:49"];
+function rnd(n){ const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+function scene(ctx, i, w, h){
+  const pal = [["#2a1a3a","#ff8a3d","#ffd7a8"],["#0d1b26","#1f6f78","#8fd3c8"],["#2b1410","#e0522a","#ffb870"],["#101a12","#4c8a4a","#e6f0b0"],["#1c1a14","#ffb347","#fff1d6"]][i];
+  const g = ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,pal[0]); g.addColorStop(0.7,pal[1]); g.addColorStop(1,pal[2]);
+  ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+  ctx.fillStyle = pal[2]; ctx.beginPath(); ctx.arc(w*0.68, h*0.34, h*0.12, 0, 7); ctx.fill();
+  const dark = a => `rgba(8,6,10,${a})`;
+  if (i === 0){
+    for (let k=0;k<3;k++){ ctx.fillStyle=dark(0.4+k*0.25); ctx.beginPath(); ctx.moveTo(0,h);
+      for (let x=0;x<=w;x+=5) ctx.lineTo(x, h*(0.6+k*0.1) - Math.abs(Math.sin(x*0.03+k*2))*h*(0.28-k*0.07));
+      ctx.lineTo(w,h); ctx.fill(); }
+  } else if (i === 1){
+    for (let r=0;r<14;r++){ const y=h*0.55+r*(h*0.035); ctx.strokeStyle=`rgba(255,255,255,${0.08+r*0.02})`; ctx.lineWidth=1.5;
+      ctx.beginPath(); for (let x=0;x<=w;x+=4) ctx.lineTo(x, y+Math.sin(x*0.06+r)*(2+r*0.4)); ctx.stroke(); }
+    ctx.fillStyle=dark(0.5); ctx.fillRect(0,h*0.54,w,2);
+  } else if (i === 2){
+    ctx.fillStyle=dark(0.85);
+    for (let x=0;x<w;x+=14){ const bh=h*(0.18+rnd(x+5)*0.4); ctx.fillRect(x,h-bh,12,bh);
+      ctx.fillStyle="rgba(255,200,120,0.8)";
+      for (let y=h-bh+6;y<h-4;y+=10) if (rnd(x*y)>0.6) ctx.fillRect(x+3,y,3,4);
+      ctx.fillStyle=dark(0.85); }
+  } else if (i === 3){
+    for (let x=-6;x<w+6;x+=11){ const th=h*(0.3+rnd(x+2)*0.35); ctx.fillStyle=dark(0.55+rnd(x)*0.35);
+      ctx.beginPath(); ctx.moveTo(x,h); ctx.lineTo(x+5,h-th); ctx.lineTo(x+11,h); ctx.fill(); }
+  } else {
+    ctx.fillStyle=dark(0.9); ctx.fillRect(0,h*0.78,w,h*0.22);
+    for (const [fx,fh] of [[0.42,0.34],[0.52,0.2]]){ ctx.beginPath();
+      ctx.arc(w*fx, h*(0.78-fh)-6, 6, 0, 7); ctx.fill();
+      ctx.fillRect(w*fx-5, h*(0.78-fh), 10, h*fh); }
+  }
+}
+(function(){
+  const cv = document.getElementById("hero");
+  const ctx = cv.getContext("2d");
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const fw = 220, fh = 140;
+  const tiles = [0,1,2,3,4].map(i => { const c=document.createElement("canvas"); c.width=fw; c.height=fh;
+    const x=c.getContext("2d"); if (x) scene(x,i,fw,fh); return c; });
+  const t0 = performance.now(); const CYCLE = 13000, RUN = 6500;
+  function draw(now){
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const W = cv.clientWidth, H = cv.clientHeight;
+    if (cv.width !== Math.round(W*dpr)){ cv.width = Math.round(W*dpr); cv.height = Math.round(H*dpr); }
+    ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+    const t = (now - t0 + 0.4*RUN) % CYCLE;
+    const prog = still ? 1.1 : Math.min(1.1, t/RUN);
+    const fade = still ? 1 : (t > CYCLE-700 ? Math.max(0,(CYCLE-t)/700) : 1);
+    const small = W < 640;
+    const wy = H * (small ? 0.78 : 0.72);
+    const pad = 24; const bars = Math.floor((W - pad*2) / 6); const cols = 2;
+    for (let b=0;b<bars;b++){
+      const u=b/bars; let a=0.2+0.8*Math.pow(rnd(b*1.7),1.5);
+      for (const k of KEYS) a += Math.max(0, 0.5 - Math.abs(u-k)*6);
+      const bh = Math.min(1.1,a) * H * 0.12;
+      ctx.fillStyle = u < prog ? ORANGE : "rgba(255,255,255,0.24)";
+      ctx.fillRect(pad + b*6, wy - bh, 3, bh*2);
+    }
+    if (prog < 1.02){ ctx.fillStyle = ORANGE;
+      ctx.fillRect(pad + Math.min(prog,1)*(bars*6) - 1, wy - H*0.19, 2, H*0.38); }
+    ctx.globalAlpha = fade;
+    KEYS.forEach((k,i) => {
+      if (small && i > 3) return;
+      const dev = Math.max(0, Math.min(1, (prog-k)/0.12));
+      const cx = small ? pad + ((i%cols)+0.5)*((W-pad*2)/cols) : pad + k*(bars*6);
+      const colW = (W-pad*2)/cols;
+      const sw = small ? colW-18 : 150, sh = small ? Math.round(sw*0.64) : 96;
+      const sx = cx - sw/2, sy = small ? 30 + Math.floor(i/cols)*(sh+34) : wy - H*0.26 - sh - (i%2)*20;
+      if (!small){ ctx.strokeStyle="rgba(255,255,255,0.18)"; ctx.beginPath();
+        ctx.moveTo(cx, sy+sh); ctx.lineTo(cx, wy-H*0.12); ctx.stroke(); }
+      ctx.fillStyle="rgba(255,255,255,0.06)"; ctx.fillRect(sx,sy,sw,sh);
+      const cell=6;
+      for (let yy=0;yy<sh;yy+=cell) for (let xx=0;xx<sw;xx+=cell)
+        if (rnd(xx*3+yy*7+i*100) < dev)
+          ctx.drawImage(tiles[i], (xx/sw)*fw, (yy/sh)*fh, (cell/sw)*fw, (cell/sh)*fh, sx+xx, sy+yy, cell, cell);
+      ctx.strokeStyle = dev>0.99 ? ORANGE : "rgba(255,255,255,0.25)";
+      ctx.strokeRect(sx+0.5, sy+0.5, sw-1, sh-1);
+      ctx.fillStyle="rgba(255,255,255,0.75)"; ctx.font="11px ui-monospace, Menlo, monospace";
+      ctx.fillText(small ? `${TIMES[i]}  idea ${i+1}` : `${TIMES[i]}  ${LABELS[i]}`, sx, sy-8);
+    });
+    ctx.globalAlpha = 1;
+    ctx.fillStyle="rgba(255,255,255,0.45)"; ctx.font="11px ui-monospace, Menlo, monospace";
+    ctx.fillText("Sample talk, sample pictures", pad, H-10);
+    if (!still) requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+})();
+</script></body></html>"""
+
+
+def render_landing(db):
+    """Marketing-style entry view. Fixed dark palette by design (the approved
+    concept is dark-led); the editor keeps its own light/dark toggle."""
+    st.markdown(_LANDING_CSS, unsafe_allow_html=True)
+    st.markdown("""
+    <div class="lnd">
+        <div class="lnd-brand"><b>&#9679;</b> B-roll</div>
+        <div class="lnd-eyebrow">Video in. Pictures out.</div>
+        <h1>Every key moment of your video, as a picture.</h1>
+        <p class="lnd-sub">Upload a video. B-roll picks out the key ideas in what is said and makes
+        the images an editor can place over them. It handles audio in many languages; quality
+        varies by language.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("Try it", key="landing_try"):
+        st.session_state["entered"] = True
+        projs = db.list_projects()
+        if projs:
+            st.session_state.active_project_id = projs[0].id
+            for k in ("nav_page", "nav_seg", "nav_sel"):
+                st.session_state[k] = "Create images"
+        else:
+            st.session_state.show_new_project = True
+        st.rerun()
+    st.markdown('<div class="lnd-cta-note">Opens the generate page</div>', unsafe_allow_html=True)
+    components.html(_LANDING_HERO_HTML, height=470)
+    st.markdown("""
+    <div class="lnd"><div class="lnd-steps">
+        <div class="lnd-step"><div class="lnd-step-t">1&nbsp;&nbsp;Drop in a video</div>
+            <div class="lnd-step-d">Or just its audio.</div></div>
+        <div class="lnd-step"><div class="lnd-step-t">2&nbsp;&nbsp;Choose how many</div>
+            <div class="lnd-step-d">You set the number of images.</div></div>
+        <div class="lnd-step"><div class="lnd-step-t">3&nbsp;&nbsp;Place them</div>
+            <div class="lnd-step-d">Images cover the key ideas across the whole video.</div></div>
+    </div></div>
+    """, unsafe_allow_html=True)
+
+
+
+# Entry view: marketing landing until the user enters the app.
+if not st.session_state.get("entered"):
+    render_landing(db)
+    st.stop()
+
 # ─── Sidebar: Projects ───────────────────────────────────────
 with st.sidebar:
-    st.markdown("### Edit Helper")
-    st.caption("Images for your edit")
-    st.markdown("---")
+    st.markdown("""
+    <div class="brand">
+        <div class="brand-mark">EH</div>
+        <div>
+            <div class="brand-name">Edit Helper</div>
+            <div class="brand-tag">Narration to b-roll stills</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.button("&larr; Landing", key="back_to_landing"):
+        st.session_state["entered"] = False
+        st.rerun()
 
     # New project button
-    if st.button("+ New Project", use_container_width=True, type="primary"):
+    if st.button("＋  New Project", use_container_width=True, type="primary"):
         st.session_state.show_new_project = True
 
     if st.session_state.show_new_project:
@@ -154,8 +1024,7 @@ with st.sidebar:
                 st.session_state.show_new_project = False
                 st.rerun()
 
-    st.markdown("---")
-    st.markdown("##### Your Projects")
+    st.markdown('<div class="side-label">Projects</div>', unsafe_allow_html=True)
 
     projects = db.list_projects()
     if not projects:
@@ -163,7 +1032,7 @@ with st.sidebar:
     else:
         for proj in projects:
             is_active = st.session_state.active_project_id == proj.id
-            label = f"{'📂' if is_active else '📁'} {proj.name}"
+            label = f"{'●' if is_active else '○'}  {proj.name}"
             if st.button(label, key=f"proj_{proj.id}", use_container_width=True,
                          type="primary" if is_active else "secondary"):
                 st.session_state.active_project_id = proj.id
@@ -178,10 +1047,24 @@ with st.sidebar:
         # ── Search sources ──
         st.markdown("**Search Sources**")
         saved_pexels_key = db.get_setting("pexels_api_key", "")
-        pexels_input = st.text_input("Pexels API Key", value=saved_pexels_key, type="password",
+        session_pexels_key = st.session_state.get("pexels_api_key_session", "")
+        pexels_input = st.text_input("Pexels API Key", value=session_pexels_key or saved_pexels_key,
+                                     type="password",
                                      help="Free from pexels.com/api. Also loadable from .env file.")
-        if pexels_input != saved_pexels_key:
-            db.set_setting("pexels_api_key", pexels_input)
+        remember_pexels = st.checkbox(
+            "Remember Pexels key on this device", value=bool(saved_pexels_key), key="pexels_remember",
+            help="Unchecked: kept for this session only. Checked: stored unencrypted in data/app.db.")
+        if pexels_input != (session_pexels_key or saved_pexels_key):
+            if remember_pexels:
+                db.set_setting("pexels_api_key", pexels_input)
+                st.session_state.pop("pexels_api_key_session", None)
+            else:
+                st.session_state["pexels_api_key_session"] = pexels_input
+        if saved_pexels_key and not remember_pexels:
+            if st.button("Remove stored Pexels key", key="forget_pexels"):
+                db.set_setting("pexels_api_key", "")
+                st.toast("Stored Pexels key removed.")
+                st.rerun()
 
         enable_pinterest = st.checkbox("Enable Pinterest Search", value=db.get_setting("enable_pinterest", "1") == "1")
         db.set_setting("enable_pinterest", "1" if enable_pinterest else "0")
@@ -231,14 +1114,31 @@ with st.sidebar:
         else:
             # Gemini API settings
             saved_gemini_key = db.get_setting("gemini_api_key", "")
-            gemini_input = st.text_input("Gemini API Key", value=saved_gemini_key, type="password",
+            session_gemini_key = st.session_state.get("gemini_api_key_session", "")
+            gemini_input = st.text_input("Gemini API Key", value=session_gemini_key or saved_gemini_key,
+                                         type="password",
                                          help="Free from aistudio.google.com/apikey. Also loadable from .env file.")
-            if gemini_input != saved_gemini_key:
-                db.set_setting("gemini_api_key", gemini_input)
+            remember_gemini = st.checkbox(
+                "Remember Gemini key on this device", value=bool(saved_gemini_key), key="gemini_remember",
+                help="Unchecked: kept for this session only. Checked: stored unencrypted in data/app.db.")
+            if gemini_input != (session_gemini_key or saved_gemini_key):
+                if remember_gemini:
+                    db.set_setting("gemini_api_key", gemini_input)
+                    st.session_state.pop("gemini_api_key_session", None)
+                else:
+                    st.session_state["gemini_api_key_session"] = gemini_input
+            if saved_gemini_key and not remember_gemini:
+                if st.button("Remove stored Gemini key", key="forget_gemini"):
+                    db.set_setting("gemini_api_key", "")
+                    st.toast("Stored Gemini key removed.")
+                    st.rerun()
+            st.caption("Session keys live in memory only. Remembered keys are stored unencrypted "
+                       "in data/app.db - use a key you can rotate and keep this folder private. "
+                       "Environment variables (.env) are never written anywhere by the app.")
 
             model_options = list(GEMINI_MODELS.keys())
             model_labels = list(GEMINI_MODELS.values())
-            saved_gemini_model = db.get_setting("gemini_model", "gemini-2.5-flash")
+            saved_gemini_model = db.get_setting("gemini_model", "gemini-3.8-flash")
             default_idx = model_options.index(saved_gemini_model) if saved_gemini_model in model_options else 0
 
             gemini_model = st.radio(
@@ -250,13 +1150,29 @@ with st.sidebar:
             if gemini_model != saved_gemini_model:
                 db.set_setting("gemini_model", gemini_model)
 
+    st.markdown("---")
+    st.markdown('<div class="side-label">Appearance</div>', unsafe_allow_html=True)
+    def _persist_theme():
+        st.query_params["theme"] = st.session_state.theme
+
+    st.radio(
+        "Theme", options=["light", "dark"],
+        format_func=lambda x: "Light" if x == "light" else "Dark",
+        horizontal=True, key="theme", label_visibility="collapsed",
+        on_change=_persist_theme,
+    )
+
 
 def get_pexels_key() -> str:
-    return db.get_setting("pexels_api_key", "") or settings.PEXELS_API_KEY
+    return (st.session_state.get("pexels_api_key_session", "")
+            or settings.PEXELS_API_KEY
+            or db.get_setting("pexels_api_key", ""))
 
 
 def get_gemini_key() -> str:
-    return db.get_setting("gemini_api_key", "") or settings.GEMINI_API_KEY
+    return (st.session_state.get("gemini_api_key_session", "")
+            or settings.GEMINI_API_KEY
+            or db.get_setting("gemini_api_key", ""))
 
 
 def is_pinterest_enabled() -> bool:
@@ -277,64 +1193,171 @@ def build_translator(custom_instructions: str = "") -> LLMTranslator:
     )
 
 
+def step_strip(states):
+    """Render the 4-step create-flow tracker.
+    states: list of 4 strings, each 'done', 'active', or 'todo'."""
+    labels = ["Upload media", "Understand speech", "Plan coverage", "Generate images"]
+    parts = ['<div class="steps">']
+    for i, (label, state) in enumerate(zip(labels, states)):
+        parts.append(f'<div class="step {state}"><span class="step-num">{i + 1}</span>{label}</div>')
+        if i < 3:
+            parts.append('<div class="step-line"></div>')
+    parts.append("</div>")
+    st.markdown("".join(parts), unsafe_allow_html=True)
+
+
+def coverage_bar(segments, picked_indices):
+    """Render a mini timeline showing where the picked moments sit across the video."""
+    if not segments:
+        return
+    total = max(seg.end_time for seg in segments) or 1
+    ticks = []
+    for i, seg in enumerate(segments):
+        left = (seg.start_time / total) * 100
+        width = max(((seg.end_time - seg.start_time) / total) * 100, 0.8)
+        picked = i in picked_indices
+        color = "var(--accent)" if picked else "var(--surface-3)"
+        opacity = "1" if picked else "0.7"
+        ticks.append(
+            f'<div style="position:absolute;left:{left:.2f}%;width:{width:.2f}%;top:0;bottom:0;'
+            f'background:{color};opacity:{opacity};border-radius:3px;" '
+            f'title="{seg.start_time:.0f}s"></div>'
+        )
+    st.markdown(
+        f'<div style="margin:2px 0 6px;font-size:11px;font-family:var(--mono);'
+        f'letter-spacing:0.03em;color:var(--muted);">COVERAGE ACROSS YOUR VIDEO / 0:00 - '
+        f'{int(total // 60)}:{int(total % 60):02d}</div>'
+        f'<div style="position:relative;height:16px;background:var(--surface-2);'
+        f'border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:18px;">'
+        f'{"".join(ticks)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 # ─── Main Content ─────────────────────────────────────────────
 project = get_active_project()
 
 if project is None:
-    # Landing page
+    # ── Landing ──
     st.markdown("""
-    <div class="hero-container">
-        <h1 class="hero-title">Make images for your video</h1>
+    <section class="hero">
+        <div class="hero-eyebrow"><span class="pulse-dot"></span>Gemini-powered image studio</div>
+        <h1 class="hero-title">Turn narration into a <em>visual story</em>.</h1>
         <p class="hero-sub">
-            Upload a video. Review image ideas based on its audio. Save the images you want for your edit.
+            Upload a rough cut or voiceover. Gemini listens to the speech — including Tamil and
+            other languages, model quality permitting — understands what it is about, and frames
+            a set of stills you can drop anywhere into your edit.
         </p>
-    </div>
+    </section>
     """, unsafe_allow_html=True)
 
-    st.info("Create a project in the sidebar to get started.")
+    if not projects:
+        st.markdown('<div class="note-box">Create a project in the sidebar to get started.</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="section-eyebrow">How it works</div>', unsafe_allow_html=True)
+    f1, f2, f3, f4 = st.columns(4)
+    features = [
+        ("01", "Upload media", "Drop in a video or audio file (upload cap set in config, 10GB here). The audio track carries the story."),
+        ("02", "Understand speech", "Gemini transcribes and reasons about the narration with timestamps. Multilingual, including Tamil — verify accuracy on your clips."),
+        ("03", "Plan coverage", "Pick how many images you need. Moments spread across the whole video — you approve every prompt."),
+        ("04", "Generate images", "Stills render inline on this page, matched to transcript passages, ready for your timeline."),
+    ]
+    for col, (num, title, desc) in zip((f1, f2, f3, f4), features):
+        with col:
+            st.markdown(f"""
+            <div class="feat-card">
+                <div class="feat-num">{num}</div>
+                <div class="feat-title">{title}</div>
+                <p class="feat-desc">{desc}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
     # Show recent activity
     if projects:
-        st.markdown("### Recent Projects")
+        st.markdown('<div class="section-eyebrow">Recent projects</div>', unsafe_allow_html=True)
         for proj in projects[:5]:
             resource_count = len(db.get_resources(proj.id))
-            st.markdown(f"**{proj.name}** — {resource_count} resources — {proj.description[:80] if proj.description else 'No description'}")
+            st.markdown(f"""
+            <div class="proj-card">
+                <div class="proj-name">{proj.name}</div>
+                <div class="proj-meta">{resource_count} resources · {proj.description[:80] if proj.description else 'No description'}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown('<div style="height:10px"></div>', unsafe_allow_html=True)
 
 else:
     # ─── Project Header ──────────────────────────────────────
     st.markdown(f"""
-    <div class="hero-container">
-        <h1 class="hero-title">{project.name}</h1>
-        <p class="hero-sub">{project.description or 'No description'}</p>
+    <div class="page-head">
+        <h1>{project.name}</h1>
+        <p>{project.description or 'No description'}</p>
     </div>
     """, unsafe_allow_html=True)
 
-    # ─── Tabs ─────────────────────────────────────────────────
-    tab_create, tab_resources, tab_search, tab_pipeline, tab_chat, tab_settings = st.tabs([
-        "Create images", "Library", "Find stock", "Stock pipeline", "Activity", "Settings"
-    ])
+    # ─── Navigation ───────────────────────────────────────────
+    # Desktop: spacious underline bar (segmented control restyled).
+    # Mobile: clearly labelled page picker (selectbox). Same state, CSS swaps them.
+    _NAV_PAGES = ["Create images", "Library", "Find stock", "Stock pipeline", "Activity", "Settings"]
+    if "nav_page" not in st.session_state or st.session_state["nav_page"] not in _NAV_PAGES:
+        st.session_state["nav_page"] = "Create images"
 
-    with tab_create:
-        st.subheader("Create images from a video")
-        st.caption("Gemini listens to the video's audio, suggests visuals, and generates images for selected moments.")
+    def _nav_from_seg():
+        st.session_state["nav_page"] = st.session_state["nav_seg"]
+        st.session_state["nav_sel"] = st.session_state["nav_seg"]
+
+    def _nav_from_sel():
+        st.session_state["nav_page"] = st.session_state["nav_sel"]
+        st.session_state["nav_seg"] = st.session_state["nav_sel"]
+
+    st.session_state.setdefault("nav_seg", st.session_state["nav_page"])
+    st.session_state.setdefault("nav_sel", st.session_state["nav_page"])
+    st.segmented_control(
+        "Pages", _NAV_PAGES,
+        key="nav_seg", on_change=_nav_from_seg, label_visibility="collapsed", width="content",
+    )
+    st.selectbox(
+        "Go to page", _NAV_PAGES,
+        key="nav_sel", on_change=_nav_from_sel,
+    )
+    _page = st.session_state["nav_page"]
+
+    if _page == "Create images":
+        st.markdown('<div class="section-title">Create images from a video</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-sub">Gemini listens to the audio, understands the story, and generates a set of stills that cover the whole video. Images appear right here on the page.</div>', unsafe_allow_html=True)
 
         gemini_key = get_gemini_key()
         if not gemini_key:
-            key_input = st.text_input("Gemini API key", type="password", key="create_gemini_key")
+            key_input = st.text_input(
+                "Gemini API key", type="password", key="create_gemini_key",
+                help="Kept for this session only. To remember it on this device, use Global Settings.")
             if key_input:
-                db.set_setting("gemini_api_key", key_input.strip())
+                st.session_state["gemini_api_key_session"] = key_input.strip()
                 gemini_key = key_input.strip()
 
+        analysis_key = f"image_analysis_{project.id}"
+        images_key = f"generated_images_{project.id}"
+        analysis = st.session_state.get(analysis_key)
+        generated = st.session_state.get(images_key, [])
+
+        _done = [
+            bool(st.session_state.get(f"image_source_{project.id}") or analysis or generated),
+            bool(analysis),
+            bool(analysis),
+            bool(generated),
+        ]
+        _next = next((i for i, d in enumerate(_done) if not d), None)
+        step_strip(["done" if d else ("active" if i == _next else "todo") for i, d in enumerate(_done)])
+
+        # ── Step 1: source media ──
+        st.markdown('<div class="section-eyebrow">Step 1 · Source media</div>', unsafe_allow_html=True)
         source_video = st.file_uploader(
             "Video or audio file",
             type=["mp4", "mov", "mkv", "avi", "webm", "mp3", "wav", "flac", "m4a"],
             key="create_video_upload",
         )
-        st.caption("The audio is used to understand the narration. Generated images are saved in this project's library.")
+        st.caption("The audio is analyzed by your chosen Gemini model. It handles multilingual speech including Tamil, but quality varies by model and clip — check the transcript before generating. Generated images are saved in this project's library.")
 
-        analysis_key = f"image_analysis_{project.id}"
-        images_key = f"generated_images_{project.id}"
-        if st.button("Analyze audio", type="primary", disabled=not (gemini_key and source_video), key="analyze_video"):
+        if st.button("Analyze audio →", type="primary", disabled=not (gemini_key and source_video), key="analyze_video"):
             try:
                 from core.audio_aligner import extract_audio
 
@@ -344,26 +1367,52 @@ else:
                 with st.spinner("Extracting and analyzing audio..."):
                     audio_path = extract_audio(media_path)
                     translator = build_translator(project.custom_instructions)
-                    analysis = translator.transcribe_audio(str(audio_path), transcribe_model="gemini-3.8-flash")
-                if not analysis or not analysis.segments:
+                    analysis_new = translator.transcribe_audio(str(audio_path), transcribe_model="gemini-3.8-flash")
+                if not analysis_new or not analysis_new.segments:
                     st.error("Gemini could not find usable speech. Try a video with clear narration or dialogue.")
                 else:
-                    st.session_state[analysis_key] = analysis
+                    st.session_state[analysis_key] = analysis_new
                     st.session_state[f"image_source_{project.id}"] = source_video.name
                     st.session_state[images_key] = []
-                    db.add_message(project.id, "assistant", f"Analyzed {source_video.name}: {len(analysis.segments)} audio moments.")
+                    db.set_memory(project.id, "last_analysis", json.dumps({
+                        "language": analysis_new.language, "backend": analysis_new.backend,
+                        "source_file": source_video.name,
+                        "segments": [asdict(seg) for seg in analysis_new.segments],
+                    }))
+                    db.add_message(project.id, "assistant", f"Analyzed {source_video.name}: {len(analysis_new.segments)} audio moments.")
                     st.rerun()
             except Exception as exc:
                 st.error(f"Audio analysis failed: {exc}")
 
         analysis = st.session_state.get(analysis_key)
+        if analysis is None:
+            _saved_raw = db.get_memory(project.id, "last_analysis")
+            if _saved_raw:
+                try:
+                    _saved = json.loads(_saved_raw)
+                    if not (source_video and source_video.name != _saved.get("source_file")):
+                        _restored = AudioTranscription(
+                            language=_saved.get("language", ""),
+                            backend=_saved.get("backend", ""),
+                            segments=[AudioSegment(**seg) for seg in _saved.get("segments", [])],
+                        )
+                        if _restored.segments:
+                            analysis = _restored
+                            st.session_state[analysis_key] = analysis
+                            st.session_state[f"image_source_{project.id}"] = _saved.get("source_file")
+                except Exception:
+                    analysis = None
         if source_video and st.session_state.get(f"image_source_{project.id}") != source_video.name:
             analysis = None
+
+        # ── Step 2 + 3: moments and coverage plan ──
         if analysis and analysis.segments:
-            st.markdown(f"#### {len(analysis.segments)} moments found")
-            st.caption("Review the transcript and visual ideas before generating. Edit any image prompt below.")
+            st.markdown('<div class="section-eyebrow">Step 2 · What the speaker says</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="section-title">{len(analysis.segments)} moments found</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-sub">Review the transcript and visual ideas before generating. Edit any image prompt below.</div>', unsafe_allow_html=True)
+
             image_count = st.number_input(
-                "Images to create", min_value=1, max_value=min(12, len(analysis.segments)),
+                "Images to create — spread across the whole video", min_value=1, max_value=min(12, len(analysis.segments)),
                 value=min(3, len(analysis.segments)), key=f"image_count_{project.id}",
             )
             count = int(image_count)
@@ -371,13 +1420,17 @@ else:
             if count == 1:
                 indices = [len(analysis.segments) // 2]
 
+            coverage_bar(analysis.segments, set(indices))
+
+            st.markdown('<div class="section-eyebrow">Step 3 · Scene plan</div>', unsafe_allow_html=True)
             prompts = []
-            for index in indices:
+            for scene_no, index in enumerate(indices, 1):
                 segment = analysis.segments[index]
                 scene = segment.visual_description or segment.english_translation or segment.original_text
-                with st.expander(f"{segment.start_time:.0f}–{segment.end_time:.0f}s  {segment.original_text[:90]}", expanded=True):
+                with st.expander(f"Image {scene_no} · {segment.start_time:.0f}–{segment.end_time:.0f}s  ·  {segment.original_text[:80]}", expanded=True):
                     if segment.english_translation and segment.english_translation != segment.original_text:
-                        st.caption(f"English: {segment.english_translation}")
+                        st.markdown(f'<div class="translation-box"><b>English:</b> {segment.english_translation}</div>',
+                                    unsafe_allow_html=True)
                     prompt = st.text_area(
                         "Image prompt",
                         value=(f"Create a cinematic 16:9 still image for a video edit. Show {scene}. "
@@ -388,7 +1441,7 @@ else:
                     )
                     prompts.append((segment, prompt))
 
-            if st.button("Generate images", type="primary", key="generate_video_images"):
+            if st.button(f"Generate {count} image{'s' if count > 1 else ''} →", type="primary", key="generate_video_images"):
                 created = []
                 with st.status("Generating images", expanded=True) as status:
                     for segment, prompt in prompts:
@@ -406,35 +1459,52 @@ else:
                             st.write(f"Created image for {segment.start_time:.0f}s")
                         except Exception as exc:
                             st.error(f"Image at {segment.start_time:.0f}s failed: {exc}")
-                    status.update(label=f"Created {len(created)} of {len(prompts)} images", state="complete", expanded=False)
+                    failed = len(prompts) - len(created)
+                    if failed:
+                        status.update(
+                            label=f"Created {len(created)} of {len(prompts)} images ({failed} failed)",
+                            state="error", expanded=(len(created) == 0))
+                    else:
+                        status.update(label=f"Created {len(created)} of {len(prompts)} images",
+                                      state="complete", expanded=False)
                 st.session_state[images_key] = created
                 if created:
                     db.add_message(project.id, "assistant", f"Generated {len(created)} images from audio moments.")
 
+        # ── Step 4: results gallery (images visible on the page) ──
         generated = st.session_state.get(images_key, [])
         if generated:
-            st.markdown("#### Ready for your edit")
-            for start_time, image_path in generated:
-                if Path(image_path).exists():
-                    preview, action = st.columns([3, 1])
-                    with preview:
-                        st.image(image_path, caption=f"{start_time:.0f}s", use_container_width=True)
-                    with action:
-                        with open(image_path, "rb") as image_file:
-                            st.download_button("Download image", image_file, file_name=Path(image_path).name,
-                                               mime="image/png", key=f"download_{Path(image_path).stem}")
+            st.markdown('<div class="section-eyebrow">Step 4 · Ready for your edit</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-sub">Each image is matched to a transcript passage — drop it into your timeline at the marked time.</div>', unsafe_allow_html=True)
+            gallery_cols = 3 if len(generated) >= 3 else len(generated)
+            for row_start in range(0, len(generated), gallery_cols):
+                cols = st.columns(gallery_cols)
+                for col_idx, col in enumerate(cols):
+                    idx = row_start + col_idx
+                    if idx >= len(generated):
+                        break
+                    start_time, image_path = generated[idx]
+                    with col:
+                        if Path(image_path).exists():
+                            st.markdown(f'<span class="img-chip">Place at ~{start_time:.0f}s</span>', unsafe_allow_html=True)
+                            st.image(image_path, use_container_width=True)
+                            with open(image_path, "rb") as image_file:
+                                st.download_button("Download", image_file, file_name=Path(image_path).name,
+                                                   mime="image/png", key=f"download_{Path(image_path).stem}",
+                                                   use_container_width=True)
 
     # ═══════════════════════════════════════════════════════════
-    # TAB 1: SEARCH (Pinterest + Pexels quick search)
+    # TAB: SEARCH (Pinterest + Pexels quick search)
     # ═══════════════════════════════════════════════════════════
-    with tab_search:
-        st.markdown("### Search for B-Roll")
-        st.caption("Search Pinterest and Pexels. The agent reasons about your query to find better visuals.")
+    if _page == "Find stock":
+        st.markdown('<div class="section-title">Search for B-Roll</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-sub">Search Pinterest and Pexels. The agent reasons about your query to find better visuals.</div>', unsafe_allow_html=True)
 
         search_col1, search_col2, search_col3 = st.columns([3, 1, 1])
         with search_col1:
-            search_query = st.text_input("Search query", placeholder="cinematic mountain landscape drone aerial",
+            search_query = st.text_input("Search query", placeholder="Describe the visual you need",
                                          key="search_query_input")
+            st.caption('Example: "cinematic mountain landscape drone aerial". Tamil or Hindi works too - it gets translated before searching.')
         with search_col2:
             fetch_count = st.number_input("Images to fetch", min_value=5, max_value=100, value=20, step=5,
                                           key="fetch_count_search")
@@ -539,6 +1609,10 @@ else:
         results = st.session_state.pinterest_results
         if results:
             st.markdown(f"**{len(results)} results found**")
+            if any(getattr(c, "source", "") == "fallback" for c in results):
+                st.info("No live stock source answered (offline or no Pexels key). Cards marked "
+                        "SAMPLE are curated stand-ins from the app's built-in catalog - not live "
+                        "search results. Add a Pexels key in Global Settings for real results.")
 
             # Grid display
             cols_per_row = 3
@@ -552,9 +1626,10 @@ else:
                     with col:
                         # Source badge
                         source_class = f"source-{cand.source}"
+                        source_label = "SAMPLE" if cand.source == "fallback" else cand.source.upper()
                         st.markdown(
-                            f'<span class="source-badge {source_class}">{cand.source.upper()}</span> '
-                            f'<span style="color:#94a3b8;font-size:0.8rem;">{cand.media_type}</span>',
+                            f'<span class="source-badge {source_class}">{source_label}</span> '
+                            f'<span class="media-type-tag">{cand.media_type}</span>',
                             unsafe_allow_html=True,
                         )
 
@@ -587,11 +1662,11 @@ else:
                             st.toast(f"Saved: {cand.title[:40]}")
 
     # ═══════════════════════════════════════════════════════════
-    # TAB 2: PIPELINE (Audio → Beats → Auto Source)
+    # TAB: PIPELINE (Audio → Beats → Auto Source)
     # ═══════════════════════════════════════════════════════════
-    with tab_pipeline:
-        st.markdown("### Autonomous B-Roll Pipeline")
-        st.caption("Upload audio/video, agent extracts narrative beats and auto-sources matching b-roll.")
+    if _page == "Stock pipeline":
+        st.markdown('<div class="section-title">Autonomous B-Roll Pipeline</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-sub">Upload audio/video, agent extracts narrative beats and auto-sources matching b-roll.</div>', unsafe_allow_html=True)
 
         pipe_col1, pipe_col2 = st.columns([1, 1])
 
@@ -605,6 +1680,9 @@ else:
             if st.button("Sync Aesthetic Memory"):
                 with st.spinner("Ingesting references into Qdrant..."):
                     embedder = MultimodalEmbedder()
+                    if getattr(embedder, "is_mock", False):
+                        st.warning("Embedding model not loaded - deterministic fallback mode. "
+                                   "Similarity matching is approximate, not real visual judgment.")
                     memory = AestheticMemory(embedder=embedder)
                     res = memory.ingest_reference_folder(Path(ref_folder))
                     if res.get("status") == "success":
@@ -627,7 +1705,7 @@ else:
                                                    help="How many images/videos to fetch and evaluate per narrative beat.")
         with pipe_col4:
             pipeline_skip_dupes = st.checkbox("Skip already-saved assets", value=True, key="pipeline_skip_dupes",
-                                             help="Avoid fetching images already saved in this project.")
+                                              help="Avoid fetching images already saved in this project.")
         with pipe_col5:
             transcribe_method = st.radio(
                 "Transcription",
@@ -653,7 +1731,7 @@ else:
         st.markdown("---")
 
         st.markdown("**Input Media**")
-        st.caption("Upload any video/audio file (no size limit). Or paste a local file path for very large files.")
+        st.caption("Upload a video/audio file (up to 10GB, set in .streamlit config). Or paste a local file path for very large files.")
 
         input_method = st.radio("Input method", ["Upload file", "Local file path", "Demo sample"],
                                 horizontal=True, key="input_method")
@@ -662,7 +1740,7 @@ else:
         local_file_path = ""
         if input_method == "Upload file":
             uploaded_file = st.file_uploader(
-                "Upload Video or Audio (mp4, mkv, avi, mov, mp3, wav, flac — any size)",
+                "Upload Video or Audio (mp4, mkv, avi, mov, mp3, wav, flac — up to 10GB)",
                 type=["mp4", "mkv", "avi", "mov", "webm", "mp3", "wav", "flac", "aac", "ogg", "m4a", "wma"],
                 key="pipeline_upload",
             )
@@ -686,25 +1764,36 @@ else:
             with st.status("Agent Execution", expanded=True) as status_box:
                 # Resolve media path
                 media_path = None
-                if input_method == "Upload file" and uploaded_file is not None:
+                if input_method == "Upload file":
+                    if uploaded_file is None:
+                        progress.empty()
+                        st.error("Upload a file first (or switch the input method).")
+                        st.session_state.is_processing = False
+                        st.stop()
                     temp_input = settings.TEMP_DIR / uploaded_file.name
                     with open(temp_input, "wb") as f:
                         f.write(uploaded_file.getbuffer())
                     media_path = temp_input
-                elif input_method == "Local file path" and local_file_path.strip():
+                elif input_method == "Local file path":
+                    if not local_file_path.strip():
+                        progress.empty()
+                        st.error("Enter a local file path first (or switch the input method).")
+                        st.session_state.is_processing = False
+                        st.stop()
                     media_path = Path(local_file_path.strip())
                     if not media_path.exists():
+                        progress.empty()
                         st.error(f"File not found: {media_path}")
                         st.session_state.is_processing = False
                         st.stop()
                 else:
                     demo_path = settings.BASE_DIR / "sample_inputs" / "sample_voiceover.wav"
                     media_path = demo_path if demo_path.exists() else None
-
-                if media_path is None:
-                    st.error("No input file provided.")
-                    st.session_state.is_processing = False
-                    st.stop()
+                    if media_path is None:
+                        progress.empty()
+                        st.error("Demo sample is missing from sample_inputs/.")
+                        st.session_state.is_processing = False
+                        st.stop()
 
                 st.write(f"Ingesting: {media_path.name}")
 
@@ -752,11 +1841,20 @@ else:
                     words = aligner.transcribe_and_align(media_path)
                     beats = aligner.segment_into_narrative_beats(words)
 
+                if not beats:
+                    st.error("Transcription produced no usable speech from this file. "
+                             "Try a clip with clearer narration, or switch the transcription method.")
+                    st.session_state.is_processing = False
+                    st.stop()
+
                 st.write(f"Found {len(beats)} narrative beats.")
 
                 # Load models
                 progress.progress(35, text="Loading CLIP & Aesthetic Memory...")
                 embedder = MultimodalEmbedder()
+                if getattr(embedder, "is_mock", False):
+                    st.warning("Embedding model not loaded - scoring runs in deterministic fallback "
+                               "mode, so candidate rankings are approximate, not real quality judgments.")
                 aesthetic_mem = AestheticMemory(embedder=embedder)
                 if aesthetic_mem.aesthetic_centroid is None:
                     aesthetic_mem.ingest_reference_folder(Path(ref_folder))
@@ -861,7 +1959,7 @@ else:
 
         # Display results
         if st.session_state.broll_results:
-            st.markdown("### Sequenced B-Roll Feed")
+            st.markdown('<div class="section-title">Sequenced B-Roll Feed</div>', unsafe_allow_html=True)
             for item in st.session_state.broll_results:
                 beat = item["beat"]
                 approved = item.get("approved_asset")
@@ -880,9 +1978,7 @@ else:
                         translation = item.get("translation")
                         if translation:
                             st.markdown(
-                                f'<div style="background:rgba(56,189,248,0.08);border-left:4px solid #38bdf8;'
-                                f'padding:8px 12px;border-radius:0 8px 8px 0;margin-bottom:10px;'
-                                f'font-size:0.9rem;color:#93c5fd;">'
+                                f'<div class="translation-box">'
                                 f'<b>English:</b> "{translation.english_translation}"</div>',
                                 unsafe_allow_html=True,
                             )
@@ -900,7 +1996,7 @@ else:
                             <span class="metric-pill">Text: {approved.semantic_score:.3f}</span>
                             <span class="metric-pill">Aesthetic: {approved.aesthetic_score:.3f}</span>
                             <span class="metric-pill">Composite: <b>{approved.composite_score:.3f}</b></span>
-                            <span class="source-badge {source_class}">{approved.candidate.source.upper()}</span>
+                            <span class="source-badge {source_class}">{"SAMPLE" if approved.candidate.source == "fallback" else approved.candidate.source.upper()}</span>
                             """, unsafe_allow_html=True)
                             st.caption(f"**{approved.candidate.title[:70]}** ({approved.candidate.media_type})")
 
@@ -933,14 +2029,15 @@ else:
                 st.code("\n".join(st.session_state.trace_logs), language="text")
 
     # ═══════════════════════════════════════════════════════════
-    # TAB 3: RESOURCES
+    # TAB: LIBRARY (Project Resources)
     # ═══════════════════════════════════════════════════════════
-    with tab_resources:
-        st.markdown("### Project Resources")
+    if _page == "Library":
+        st.markdown('<div class="section-title">Library</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-sub">Every image and asset saved in this project, visible on the page.</div>', unsafe_allow_html=True)
 
         resources = db.get_resources(project.id)
         if not resources:
-            st.info("No resources yet. Search for b-roll or run the pipeline to add assets.")
+            st.info("No resources yet. Create images, search for b-roll or run the pipeline to add assets.")
         else:
             # Filter
             types = sorted(set(r.resource_type for r in resources))
@@ -949,55 +2046,87 @@ else:
             filtered = resources if filter_type == "all" else [r for r in resources if r.resource_type == filter_type]
             st.caption(f"Showing {len(filtered)} of {len(resources)} resources")
 
-            for res in filtered:
-                with st.container():
-                    rcol1, rcol2, rcol3 = st.columns([2, 1, 0.5])
-                    with rcol1:
-                        meta = {}
-                        if res.metadata:
-                            try:
-                                parsed = json.loads(res.metadata)
-                                meta = parsed if isinstance(parsed, dict) else {}
-                            except (json.JSONDecodeError, TypeError):
-                                meta = {}
+            def res_meta(res):
+                if res.metadata:
+                    try:
+                        parsed = json.loads(res.metadata)
+                        return parsed if isinstance(parsed, dict) else {}
+                    except (json.JSONDecodeError, TypeError):
+                        return {}
+                return {}
+
+            def res_preview(res, meta):
+                preview_url = meta.get("preview_url", "")
+                if preview_url:
+                    return preview_url
+                if res.file_path and Path(res.file_path).exists():
+                    p = Path(res.file_path)
+                    if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
+                        return str(p)
+                return None
+
+            # Visual grid for assets that have a preview
+            with_preview = [r for r in filtered if res_preview(r, res_meta(r))]
+            without_preview = [r for r in filtered if not res_preview(r, res_meta(r))]
+
+            cols_per_row = 3
+            for row_start in range(0, len(with_preview), cols_per_row):
+                cols = st.columns(cols_per_row)
+                for col_idx, col in enumerate(cols):
+                    idx = row_start + col_idx
+                    if idx >= len(with_preview):
+                        break
+                    res = with_preview[idx]
+                    meta = res_meta(res)
+                    with col:
                         source = meta.get("source", "")
-                        st.markdown(f"**{res.title[:60] or 'Untitled'}** — `{res.resource_type}`")
+                        source_class = f"source-{source.lower()}" if source else "source-fallback"
                         if source:
-                            st.caption(f"Source: {source}")
-                        if res.file_path:
-                            st.caption(f"File: `{res.file_path}`")
+                            st.markdown(f'<span class="source-badge {source_class}">{source.upper()}</span>',
+                                        unsafe_allow_html=True)
+                        try:
+                            st.image(res_preview(res, meta), use_container_width=True)
+                        except Exception:
+                            st.info("Preview unavailable")
+                        st.markdown(f"**{res.title[:60] or 'Untitled'}**")
+                        st.caption(f"`{res.resource_type}`")
+                        a1, a2 = st.columns(2)
+                        with a1:
+                            if res.file_path and Path(res.file_path).exists():
+                                if st.button("📋 Copy", key=f"clip_res_{res.id}", help="Copy to clipboard",
+                                             use_container_width=True):
+                                    copy_file_to_windows_clipboard(res.file_path)
+                                    st.toast("Copied!")
+                        with a2:
+                            if st.button("🗑 Delete", key=f"del_res_{res.id}", help="Delete resource",
+                                         use_container_width=True):
+                                db.delete_resource(res.id)
+                                st.rerun()
                         if res.source_url:
                             st.caption(f"[View Original]({res.source_url})")
 
-                    with rcol2:
-                        preview_url = meta.get("preview_url", "")
-                        if preview_url:
-                            try:
-                                st.image(preview_url, width=150)
-                            except Exception:
-                                pass
-                        elif res.file_path and Path(res.file_path).exists():
-                            p = Path(res.file_path)
-                            if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"):
-                                st.image(str(p), width=150)
-
-                    with rcol3:
-                        if res.file_path and Path(res.file_path).exists():
-                            if st.button("📋", key=f"clip_res_{res.id}", help="Copy to clipboard"):
-                                copy_file_to_windows_clipboard(res.file_path)
-                                st.toast("Copied!")
-                        if st.button("🗑", key=f"del_res_{res.id}", help="Delete resource"):
-                            db.delete_resource(res.id)
-                            st.rerun()
-
-                    st.divider()
+            # Compact rows for assets without a preview
+            for res in without_preview:
+                meta = res_meta(res)
+                source = meta.get("source", "")
+                st.markdown(f"**{res.title[:60] or 'Untitled'}** — `{res.resource_type}`")
+                if source:
+                    st.caption(f"Source: {source}")
+                if res.file_path:
+                    st.caption(f"File: `{res.file_path}`")
+                if res.source_url:
+                    st.caption(f"[View Original]({res.source_url})")
+                if st.button("🗑", key=f"del_res_{res.id}", help="Delete resource"):
+                    db.delete_resource(res.id)
+                    st.rerun()
+                st.divider()
 
     # ═══════════════════════════════════════════════════════════
-    # TAB 4: ACTIVITY LOG (Chat History)
+    # TAB: ACTIVITY LOG (Chat History)
     # ═══════════════════════════════════════════════════════════
-    with tab_chat:
-        st.markdown("### Activity Log")
-        st.caption("All actions and events in this project.")
+    if _page == "Activity":
+        st.markdown('<div class="section-title">Activity Log</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-sub">All actions and events in this project.</div>', unsafe_allow_html=True)
 
         messages = db.get_messages(project.id)
         if not messages:
@@ -1021,10 +2150,10 @@ else:
             st.rerun()
 
     # ═══════════════════════════════════════════════════════════
-    # TAB 5: PROJECT SETTINGS (Custom Instructions)
+    # TAB: PROJECT SETTINGS (Custom Instructions)
     # ═══════════════════════════════════════════════════════════
-    with tab_settings:
-        st.markdown("### Project Settings")
+    if _page == "Settings":
+        st.markdown('<div class="section-title">Project Settings</div>', unsafe_allow_html=True)
 
         # Project info
         with st.form("project_info_form"):
@@ -1038,7 +2167,7 @@ else:
         st.markdown("---")
 
         # Custom Instructions
-        st.markdown("### Custom Instructions")
+        st.markdown('<div class="section-title">Custom Instructions</div>', unsafe_allow_html=True)
         st.caption(
             "Rules and preferences the agent follows for this project. "
             "Similar to custom instructions in ChatGPT or system prompts. "
@@ -1068,7 +2197,7 @@ else:
         st.markdown("---")
 
         # Agent Memory
-        st.markdown("### Agent Memory")
+        st.markdown('<div class="section-title">Agent Memory</div>', unsafe_allow_html=True)
         st.caption("What the agent remembers about this project.")
         memory = db.get_all_memory(project.id)
         if memory:
@@ -1084,7 +2213,7 @@ else:
         st.markdown("---")
 
         # Danger zone
-        st.markdown("### Danger Zone")
+        st.markdown('<div class="section-title">Danger Zone</div>', unsafe_allow_html=True)
         if st.button("Delete This Project", type="secondary", key="delete_project_btn"):
             st.session_state["confirm_delete"] = True
 
