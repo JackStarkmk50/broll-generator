@@ -447,6 +447,13 @@ class LLMTranslator:
             return self._gemini
         return None
 
+    def generate_text(self, prompt: str) -> Optional[str]:
+        """Plain-text generation through the preferred backend (reasoning model)."""
+        backend = self._get_backend()
+        if not backend:
+            return None
+        return backend.generate(prompt)
+
     def translate_and_reason(self, text: str) -> TranslatedBeat:
         if not is_non_english(text):
             return TranslatedBeat(
