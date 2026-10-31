@@ -308,20 +308,27 @@ class OllamaBackend:
 # ── Gemini backend (new google-genai SDK) ─────────────────────
 GEMINI_MODELS = {
     "gemini-3.8-flash": "Gemini 3.8 Flash (latest)",
-    "gemini-3.5-flash": "Gemini 3.5 Flash",
+    "gemini-3.6-flash": "Gemini 3.6 Flash",
     "gemini-3.5-flash-lite": "Gemini 3.5 Flash Lite (fastest)",
+}
+
+# Deprecated model ids Google auto-routes; map them to the official replacement
+# instead of silently falling back to the newest model.
+DEPRECATED_MODEL_MAP = {
+    "gemini-3.5-flash": "gemini-3.6-flash",
 }
 
 GEMINI_TRANSCRIBE_MODELS = {
     "gemini-3.5-transcribe": "Gemini 3.5 Transcribe (dedicated, fastest)",
     "gemini-3.8-flash": "Gemini 3.8 Flash (all-in-one: transcribe + translate + queries)",
-    "gemini-3.5-flash": "Gemini 3.5 Flash (all-in-one)",
+    "gemini-3.6-flash": "Gemini 3.6 Flash (all-in-one)",
 }
 
 
 class GeminiBackend:
     def __init__(self, api_key: str, model: str = "gemini-3.8-flash"):
         self.api_key = api_key
+        model = DEPRECATED_MODEL_MAP.get(model, model)
         self.model_name = model if model in GEMINI_MODELS else "gemini-3.8-flash"
         self._client = None
 
@@ -348,7 +355,7 @@ class GeminiBackend:
             return None
 
     def transcribe_audio(self, audio_path: str, custom_instructions: str = "",
-                          transcribe_model: str = "") -> Optional[str]:
+                          transcribe_model: str = "", max_output_tokens: int = None) -> Optional[str]:
         """
         Send audio file to Gemini for transcription.
         If transcribe_model is a dedicated model (gemini-3.5-transcribe), returns raw transcript.
@@ -383,9 +390,11 @@ class GeminiBackend:
 
             print(f"[Gemini] Transcribing audio ({size_mb:.1f} MB) with {model_to_use}...")
 
+            config = types.GenerateContentConfig(max_output_tokens=max_output_tokens) if max_output_tokens else None
             response = self._client.models.generate_content(
                 model=model_to_use,
                 contents=[audio_part, prompt],
+                config=config,
             )
             return response.text
         except Exception as e:

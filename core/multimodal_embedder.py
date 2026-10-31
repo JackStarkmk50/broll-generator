@@ -53,6 +53,13 @@ class MultimodalEmbedder:
     def embedding_dim(self) -> int:
         return self._embedding_dim
 
+    @property
+    def is_mock(self) -> bool:
+        """True when no real embedding model could be loaded and the
+        deterministic fallback encoder is in use (scores are approximate)."""
+        self._init_model()
+        return self._model == "mock"
+
     def embed_text(self, text: Union[str, List[str]]) -> np.ndarray:
         """
         Embeds a single string or list of text strings into normalized vectors.
