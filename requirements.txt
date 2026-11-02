@@ -1,21 +1,15 @@
-# Multimodal B-Roll Sourcing Agent Requirements
-torch>=2.0.0
-torchvision>=0.15.0
-torchaudio>=2.0.0
-open_clip_torch>=2.20.0
-transformers>=4.30.0
-faster-whisper>=1.0.0
-qdrant-client>=1.7.0
-streamlit>=1.35.0
-pyperclip>=1.8.2
-opencv-python>=4.8.0
-pillow>=10.0.0
-requests>=2.31.0
+# Slim install for hosted deployment (Streamlit Community Cloud and similar).
+# Covers the Gemini Create-images flow. The legacy local stock-sourcing
+# pipeline (torch, Whisper, CLIP, Qdrant, Pinterest) is imported lazily and
+# needs requirements-full.txt on a machine meant to run it.
+streamlit==1.65.0  # pinned: hosted upload cap and tests verified against this version
+google-genai>=2.0.0
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
+requests>=2.31.0
 numpy>=1.24.0
-beautifulsoup4>=4.12.0
+pillow>=10.0.0
 ffmpeg-python>=0.2.0
 imageio-ffmpeg>=0.5.0
-google-genai>=2.0.0
+pyperclip>=1.8.2
