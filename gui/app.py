@@ -6,6 +6,8 @@ _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+import hmac
+import os
 import streamlit as st
 import streamlit.components.v1 as components
 import time
@@ -16,12 +18,72 @@ from dataclasses import asdict
 import numpy as np
 
 from config.settings import settings
+
+def _secret(name: str) -> str:
+    """Read a value from Streamlit secrets, tolerating a missing secrets file."""
+    try:
+        return str(st.secrets.get(name, "") or "")
+    except Exception:
+        return ""
+
+
+# Hosted mode: single-user app exposed on a URL. Keys stay session-only and can
+# come from the host's secret store; an optional shared access code gates entry.
+# Set both via environment variables or .streamlit/secrets.toml on the host.
+HOSTED = (os.environ.get("EDIT_HELPER_HOSTED", "") == "1"
+          or _secret("EDIT_HELPER_HOSTED") == "1")
+
+
+def _deps_available(*modules: str) -> bool:
+    """True when every module is installed, without importing it."""
+    import importlib.util
+    for mod in modules:
+        try:
+            if importlib.util.find_spec(mod) is None:
+                return False
+        except (ImportError, ValueError):
+            return False
+    return True
+
+
+# The legacy local pipeline pages need heavy deps the slim hosted install omits.
+_FIND_STOCK_OK = _deps_available("bs4")
+_STOCK_PIPELINE_OK = _deps_available("torch", "cv2", "qdrant_client", "open_clip", "faster_whisper")
+
+if HOSTED:
+    # Hosted free tiers cap memory near 1-2.7 GB, so cap uploads in hosted
+    # mode only; local runs keep the values from .streamlit/config.toml.
+    try:
+        from streamlit import config as _st_config
+        _st_config.set_option("server.maxUploadSize", 200)
+        _st_config.set_option("server.maxMessageSize", 200)
+    except Exception:
+        pass  # best effort; hosted deployments are documented as fixed at 200 MB
+
+
+def require_access_code() -> None:
+    """Optional access gate for hosted deployments (not per-user accounts)."""
+    expected = os.environ.get("EDIT_HELPER_ACCESS_CODE", "") or _secret("EDIT_HELPER_ACCESS_CODE")
+    if not expected:
+        if HOSTED:
+            # Fail closed: a hosted deployment without a configured code is not
+            # opened to anyone, whatever it is meant for eventually.
+            st.error("This hosted copy is not open yet - the owner has not configured an access code.")
+            st.stop()
+        return
+    if st.session_state.get("_access_ok"):
+        return
+    entered = st.text_input("Access code", type="password",
+                            help="Ask the owner of this deployment for the code.")
+    if not entered:
+        st.stop()
+    if not hmac.compare_digest(entered, expected):
+        st.error("Wrong access code.")
+        st.stop()
+    st.session_state["_access_ok"] = True
+    st.rerun()
 from db.database import get_db, Project, Message, Resource
 from core.audio_aligner import AudioBeatAligner, NarrativeBeat
-from core.multimodal_embedder import MultimodalEmbedder
-from core.aesthetic_memory import AestheticMemory
-from core.clipboard_helper import copy_file_to_windows_clipboard
-from core.pinterest_searcher import PinterestSearcher
 from core.query_reasoner import QueryReasoner
 from core.llm_translator import (
     LLMTranslator, is_non_english, list_ollama_models,
@@ -30,9 +92,6 @@ from core.llm_translator import (
 )
 from core.image_generator import generate_image
 from core.character_sheet import draft_character_sheet, compose_scene_prompt, compose_compact_block
-from agent.stock_sourcer import StockSourcer
-from agent.director_evaluator import DirectorEvaluator
-from agent.workflow import BRollAgentGraph
 
 # ─── Page Config ──────────────────────────────────────────────
 st.set_page_config(
@@ -41,6 +100,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="auto",
 )
+
+require_access_code()
 
 # ─── Design System ────────────────────────────────────────────
 
@@ -1047,14 +1108,18 @@ with st.sidebar:
     with st.expander("Global Settings"):
         # ── Search sources ──
         st.markdown("**Search Sources**")
-        saved_pexels_key = db.get_setting("pexels_api_key", "")
+        saved_pexels_key = "" if HOSTED else db.get_setting("pexels_api_key", "")
         session_pexels_key = st.session_state.get("pexels_api_key_session", "")
         pexels_input = st.text_input("Pexels API Key", value=session_pexels_key or saved_pexels_key,
                                      type="password",
                                      help="Free from pexels.com/api. Also loadable from .env file.")
-        remember_pexels = st.checkbox(
-            "Remember Pexels key on this device", value=bool(saved_pexels_key), key="pexels_remember",
-            help="Unchecked: kept for this session only. Checked: stored unencrypted in data/app.db.")
+        if HOSTED:
+            remember_pexels = False
+            st.caption("This hosted copy keeps keys for this session only - keys are never saved. Projects and files are still stored on the shared server.")
+        else:
+            remember_pexels = st.checkbox(
+                "Remember Pexels key on this device", value=bool(saved_pexels_key), key="pexels_remember",
+                help="Unchecked: kept for this session only. Checked: stored unencrypted in data/app.db.")
         if pexels_input != (session_pexels_key or saved_pexels_key):
             if remember_pexels:
                 db.set_setting("pexels_api_key", pexels_input)
@@ -1114,14 +1179,18 @@ with st.sidebar:
                     db.set_setting("ollama_model", ollama_model)
         else:
             # Gemini API settings
-            saved_gemini_key = db.get_setting("gemini_api_key", "")
+            saved_gemini_key = "" if HOSTED else db.get_setting("gemini_api_key", "")
             session_gemini_key = st.session_state.get("gemini_api_key_session", "")
             gemini_input = st.text_input("Gemini API Key", value=session_gemini_key or saved_gemini_key,
                                          type="password",
                                          help="Free from aistudio.google.com/apikey. Also loadable from .env file.")
-            remember_gemini = st.checkbox(
-                "Remember Gemini key on this device", value=bool(saved_gemini_key), key="gemini_remember",
-                help="Unchecked: kept for this session only. Checked: stored unencrypted in data/app.db.")
+            if HOSTED:
+                remember_gemini = False
+                st.caption("This hosted copy keeps keys for this session only - keys are never saved. Projects and files are still stored on the shared server.")
+            else:
+                remember_gemini = st.checkbox(
+                    "Remember Gemini key on this device", value=bool(saved_gemini_key), key="gemini_remember",
+                    help="Unchecked: kept for this session only. Checked: stored unencrypted in data/app.db.")
             if gemini_input != (session_gemini_key or saved_gemini_key):
                 if remember_gemini:
                     db.set_setting("gemini_api_key", gemini_input)
@@ -1165,12 +1234,20 @@ with st.sidebar:
 
 
 def get_pexels_key() -> str:
+    if HOSTED:
+        return (st.session_state.get("pexels_api_key_session", "")
+                or settings.PEXELS_API_KEY
+                or _secret("PEXELS_API_KEY"))
     return (st.session_state.get("pexels_api_key_session", "")
             or settings.PEXELS_API_KEY
             or db.get_setting("pexels_api_key", ""))
 
 
 def get_gemini_key() -> str:
+    if HOSTED:
+        return (st.session_state.get("gemini_api_key_session", "")
+                or settings.GEMINI_API_KEY
+                or _secret("GEMINI_API_KEY"))
     return (st.session_state.get("gemini_api_key_session", "")
             or settings.GEMINI_API_KEY
             or db.get_setting("gemini_api_key", ""))
@@ -1344,7 +1421,10 @@ else:
     # ─── Navigation ───────────────────────────────────────────
     # Desktop: spacious underline bar (segmented control restyled).
     # Mobile: clearly labelled page picker (selectbox). Same state, CSS swaps them.
-    _NAV_PAGES = ["Create images", "Library", "Find stock", "Stock pipeline", "Activity", "Settings"]
+    _NAV_PAGES_ALL = ["Create images", "Library", "Find stock", "Stock pipeline", "Activity", "Settings"]
+    _NAV_PAGES = [p for p in _NAV_PAGES_ALL if not (
+        (p == "Find stock" and (HOSTED or not _FIND_STOCK_OK)) or
+        (p == "Stock pipeline" and (HOSTED or not _STOCK_PIPELINE_OK)))]
     if "nav_page" not in st.session_state or st.session_state["nav_page"] not in _NAV_PAGES:
         st.session_state["nav_page"] = "Create images"
 
@@ -1367,6 +1447,9 @@ else:
         key="nav_sel", on_change=_nav_from_sel,
     )
     _page = st.session_state["nav_page"]
+    if len(_NAV_PAGES) != len(_NAV_PAGES_ALL):
+        st.caption("Find stock and Stock pipeline are unavailable here: they are disabled on hosted "
+                   "deployments and need the full local install (requirements-full.txt).")
 
     if _page == "Create images":
         st.markdown('<div class="section-title">Create images from a video</div>', unsafe_allow_html=True)
@@ -1639,6 +1722,8 @@ else:
                             st.session_state["last_translation"] = translated
 
                     # Use reasoner to generate smart queries
+                    from agent.stock_sourcer import StockSourcer
+
                     reasoner = QueryReasoner(custom_instructions=project.custom_instructions)
                     reasoned = reasoner.reason(effective_query)
                     if llm_search_queries:
@@ -1785,6 +1870,9 @@ else:
             )
             if st.button("Sync Aesthetic Memory"):
                 with st.spinner("Ingesting references into Qdrant..."):
+                    from core.aesthetic_memory import AestheticMemory
+                    from core.multimodal_embedder import MultimodalEmbedder
+
                     embedder = MultimodalEmbedder()
                     if getattr(embedder, "is_mock", False):
                         st.warning("Embedding model not loaded - deterministic fallback mode. "
@@ -1957,6 +2045,12 @@ else:
 
                 # Load models
                 progress.progress(35, text="Loading CLIP & Aesthetic Memory...")
+                from agent.director_evaluator import DirectorEvaluator
+                from agent.stock_sourcer import StockSourcer  # noqa: F811 (re-used below)
+                from agent.workflow import BRollAgentGraph
+                from core.aesthetic_memory import AestheticMemory
+                from core.multimodal_embedder import MultimodalEmbedder
+
                 embedder = MultimodalEmbedder()
                 if getattr(embedder, "is_mock", False):
                     st.warning("Embedding model not loaded - scoring runs in deterministic fallback "
@@ -2108,6 +2202,8 @@ else:
 
                             if approved.local_path:
                                 if st.button(f"Copy to Clipboard", key=f"copy_{beat.index}"):
+                                    from core.clipboard_helper import copy_file_to_windows_clipboard
+
                                     res = copy_file_to_windows_clipboard(approved.local_path)
                                     if res.get("success"):
                                         st.toast(f"Copied to clipboard!")
@@ -2198,9 +2294,11 @@ else:
                         st.caption(f"`{res.resource_type}`")
                         a1, a2 = st.columns(2)
                         with a1:
-                            if res.file_path and Path(res.file_path).exists():
+                            if res.file_path and Path(res.file_path).exists() and not HOSTED and os.name == "nt":
                                 if st.button("📋 Copy", key=f"clip_res_{res.id}", help="Copy to clipboard",
                                              use_container_width=True):
+                                    from core.clipboard_helper import copy_file_to_windows_clipboard
+
                                     copy_file_to_windows_clipboard(res.file_path)
                                     st.toast("Copied!")
                         with a2:
