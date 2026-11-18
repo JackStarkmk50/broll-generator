@@ -91,7 +91,7 @@ from core.llm_translator import (
     AudioTranscription, AudioSegment, TranslatedBeat,
 )
 from core.image_generator import generate_image
-from core.character_sheet import draft_character_sheet, compose_scene_prompt, compose_compact_block
+from core.character_sheet import draft_character_sheet, compose_scene_prompt, compose_compact_block, pick_block_text
 
 # ─── Page Config ──────────────────────────────────────────────
 st.set_page_config(
@@ -1653,8 +1653,29 @@ else:
                     'The sheet on top carries the same characters through every image.</div>',
                     unsafe_allow_html=True,
                 )
+                block_source_key = f"block_text_{project.id}"
+                if block_source_key not in st.session_state:
+                    st.session_state[block_source_key] = (
+                        db.get_memory(project.id, "block_text") or "AI interpretation")
+
+                def _save_block_source():
+                    db.set_memory(project.id, "block_text", st.session_state[block_source_key])
+
+                block_source = st.segmented_control(
+                    "Block text", ["AI interpretation", "English text"],
+                    key=block_source_key, on_change=_save_block_source,
+                    help=("AI interpretation: the visual scenario lines above. "
+                          "English text: the English text stored for each moment "
+                          "(the app's translation for non-English speech). Both come "
+                          "from the analysis already done - switching costs no extra AI call."),
+                ) or "AI interpretation"
+                use_english = block_source == "English text"
                 compact_scenes = [
-                    (f"IMAGE {scene_no} ({segment.start_time:.0f}s)", prompt_text)
+                    (f"IMAGE {scene_no} ({segment.start_time:.0f}s)",
+                     pick_block_text("english",
+                                     english_translation=segment.english_translation,
+                                     original_text=segment.original_text)
+                     if use_english else prompt_text)
                     for scene_no, (segment, prompt_text) in enumerate(prompts, 1)
                 ]
                 st.code(compose_compact_block(compact_scenes, sheet, project.custom_instructions),
