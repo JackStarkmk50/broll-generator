@@ -131,22 +131,32 @@ if "theme" not in st.session_state:
     st.session_state.theme = _qp if _qp in ("light", "dark") else "light"
 
 _CSS_FONTS = """@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 """
 
 _CSS_BASE = """@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 
 
 /* ── Canvas ── */
 .stApp, [data-testid="stAppViewContainer"] { background: var(--bg); color: var(--text); }
-[data-testid="stAppViewContainer"] * { font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif; }
+[data-testid="stAppViewContainer"] *:not([data-testid="stIconMaterial"]):not([class*="material-symbols"]):not([data-testid^="stExpanderIcon"]) { font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif; }
+/* Icons use Streamlit's own bundled icon font. Never import or override it: when the
+   override failed to load, the ligature names (arrow_down, visibility) showed as text. */
 [data-testid="stIconMaterial"], [class*="material-symbols"], [data-testid^="stExpanderIcon"] {
-    font-family: 'Material Symbols Rounded', 'Material Symbols Outlined', sans-serif !important;
+    font-family: 'Material Symbols Rounded' !important;
+    font-feature-settings: 'liga' !important; letter-spacing: normal !important;
+    text-transform: none !important; white-space: nowrap !important;
+    display: inline-block; width: 1em; overflow: hidden; line-height: 1;
 }
 .block-container { max-width: 1080px; padding: 2.2rem 2.5rem 6rem; }
 [data-testid="stHeader"] { background: transparent; }
-#MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden; display: none; }
+#MainMenu, footer, [data-testid="stDecoration"], [data-testid="stMainMenu"], [data-testid="stToolbarActions"],
+[data-testid="stStatusWidget"] { visibility: hidden; display: none; }
+/* Do not hide stToolbar itself: in current Streamlit it holds the button that reopens a
+   collapsed sidebar, so hiding it left phones with no way to reach projects or settings. */
+[data-testid="stExpandSidebarButton"], [data-testid="stSidebarCollapsedControl"] button {
+    visibility: visible !important; background: var(--surface-2) !important; color: var(--text) !important;
+    border: 1px solid var(--border) !important; border-radius: 8px !important;
+}
 [class*="stDeployButton"], [data-testid="stManageAppButton"] { display: none !important; }
 
 h1, h2, h3 { letter-spacing: -0.03em; color: var(--text); }
@@ -200,7 +210,7 @@ hr { border-color: var(--border); margin: 1.6rem 0; }
     border-radius: 999px; border: 1px solid var(--border-strong);
     background: var(--surface-2); color: var(--text);
     font-weight: 600; font-size: 13.5px; padding: 9px 18px;
-    transition: all 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 .stButton > button:hover, .stDownloadButton > button:hover, .stFormSubmitButton > button:hover {
     border-color: var(--accent-border); color: var(--accent-2);
@@ -219,6 +229,17 @@ hr { border-color: var(--border); margin: 1.6rem 0; }
 .stButton > button:disabled { opacity: 0.45; }
 
 /* ── Navigation (desktop underline bar + mobile page picker) ── */
+/* Segmented controls (Output mode, source pickers): readable in both themes.
+   Declared before the nav rules below so the page-nav underline style still wins. */
+[data-testid="stButtonGroup"] button {
+    background: var(--surface-2) !important; border: 1px solid var(--border) !important;
+    color: var(--muted) !important;
+}
+[data-testid="stButtonGroup"] button p, [data-testid="stButtonGroup"] button div { color: inherit !important; }
+[data-testid="stButtonGroup"] button:hover { color: var(--text) !important; border-color: var(--border-strong) !important; }
+[data-testid="stButtonGroup"] button[data-selected="true"] {
+    background: var(--accent-soft) !important; border-color: var(--accent-border) !important; color: var(--text) !important;
+}
 .st-key-nav_seg { margin-bottom: 26px; }
 .st-key-nav_seg [role="radiogroup"] {
     background: transparent !important; border: none !important; border-radius: 0 !important;
@@ -653,7 +674,7 @@ hr { border-color: var(--border); margin: 1.6rem 0; }
 [data-testid="stSlider"] [data-testid="stSliderThumbValue"],
 [data-testid="stSlider"] [data-testid="stSliderThumbValue"] [data-testid="stMarkdownContainer"] p,
 [data-testid="stSlider"] [data-testid="stSliderThumbValue"] p {
-    background: var(--surface-3) !important; color: var(--text) !important;
+    background: transparent !important; color: var(--text) !important;
 }
 [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p { color: var(--muted) !important; }
 code {
@@ -665,6 +686,7 @@ code {
 
 /* audit repair round 2: chat input, avatars, collapse control, widget labels */
 [data-testid="stBottom"] { background: var(--bg) !important; }
+[data-testid="stBottom"] > div, [data-testid="stBottomBlockContainer"], [data-testid="stBottomBlockContainer"] > div { background: var(--bg) !important; }
 [data-testid="stChatInput"] {
     background: var(--surface-2) !important; border: 1px solid var(--border-strong) !important;
     border-radius: 12px !important;
@@ -722,6 +744,13 @@ code {
     background: transparent !important; border: none !important; color: var(--muted) !important;
 }
 [data-testid="stTextInput"] button svg { stroke: var(--muted) !important; }
+/* One box per text field: the wrapper owns border, fill and focus ring, the inner input is flat.
+   Otherwise the password field showed a second rounded box ending before its show/hide button. */
+[data-testid="stTextInputRootElement"] input, [data-testid="stNumberInputContainer"] input {
+    border: none !important; background: transparent !important; box-shadow: none !important;
+    border-radius: 0 !important;
+}
+[data-testid="stTextInputRootElement"] { overflow: hidden; }
 [data-testid="stNumberInput"] button {
     background: var(--surface-3) !important; color: var(--text) !important; border: none !important;
 }
@@ -829,6 +858,57 @@ code {
     padding: 0 !important; min-height: 0 !important; height: auto !important;
 }
 .st-key-back_to_landing .stButton button:hover { color: var(--accent-2) !important; background: transparent !important; }
+
+/* Hallmark audit pass: labels read as plain small text, not tracked capitals. */
+.side-label, .section-eyebrow, .source-badge, .lnd-eyebrow, .feat-num, .hero-eyebrow {
+    text-transform: none !important; letter-spacing: 0 !important;
+}
+.side-label, .section-eyebrow { font-size: 12px !important; font-weight: 600 !important; }
+/* chat submit: disabled (empty box) is a visible grey arrow, enabled is the orange button */
+[data-testid="stChatInputSubmitButton"] { background: transparent !important; }
+[data-testid="stChatInputSubmitButton"]:not(:disabled) { background: var(--accent) !important; color: var(--accent-ink) !important; border-radius: 8px !important; }
+[data-testid="stChatInputSubmitButton"]:not(:disabled) svg { fill: var(--accent-ink) !important; color: var(--accent-ink) !important; }
+[data-testid="stChatInputSubmitButton"]:disabled, [data-testid="stChatInputSubmitButton"] button:disabled {
+    background: var(--surface-3) !important; color: var(--muted) !important; opacity: 1 !important;
+}
+[data-testid="stChatInputSubmitButton"]:disabled svg, [data-testid="stChatInputSubmitButton"] button:disabled svg {
+    fill: var(--muted) !important; color: var(--muted) !important;
+}
+/* sidebar radios (theme / backend): unselected circle follows the theme instead of staying white */
+[data-testid="stRadio"] label > div:first-child:not([data-testid]) > div { background-color: transparent; }
+/* radios: unselected circle follows the theme (it stayed white in dark mode) */
+[data-testid="stRadio"] label:not(:has(input:checked)) > div > div:first-child {
+    background-color: var(--surface-2) !important; border: 1px solid var(--border-strong) !important;
+}
+/* page expanders: header shares the page surface instead of a white strip in light mode */
+[data-testid="stMain"] [data-testid="stExpander"] details, [data-testid="stMain"] [data-testid="stExpander"] details > summary,
+[data-testid="stMain"] [data-testid="stExpander"] > div { background: transparent !important; }
+/* chat note: one focus ring (wrapper), not wrapper plus textarea */
+[data-testid="stChatInput"] textarea:focus, [data-testid="stChatInput"] textarea:focus-visible { box-shadow: none !important; outline: none !important; border-color: transparent !important; }
+/* checkbox and radio labels wrap instead of truncating with an ellipsis in narrow columns */
+[data-testid="stCheckbox"] label p, [data-testid="stCheckbox"] label span, [data-testid="stRadio"] label p {
+    white-space: normal !important; overflow: visible !important; text-overflow: clip !important;
+}
+/* ── UI polish pass ── */
+[data-testid="stAppDeployButton"], .stAppDeployButton, [class*="stAppDeployButton"] { display: none !important; }
+[data-testid="stExpandSidebarButton"] *, [data-testid="stSidebarCollapseButton"] * { color: var(--text) !important; }
+[data-testid="stExpandSidebarButton"] svg, [data-testid="stSidebarCollapseButton"] svg { color: var(--text) !important; fill: var(--text) !important; }
+/* select boxes: one outer box, flat inner combobox (was a double border on the page picker) */
+[data-testid="stSelectbox"] input[role="combobox"], [data-testid="stMultiSelect"] input[role="combobox"] {
+    border: none !important; box-shadow: none !important; border-radius: 0 !important; background: transparent !important;
+}
+/* uploader hint text wraps instead of running out of the dropzone */
+[data-testid="stFileUploaderDropzoneInstructions"], [data-testid="stFileUploaderDropzone"] span, [data-testid="stFileUploaderDropzone"] small {
+    white-space: normal !important; overflow-wrap: anywhere; min-width: 0;
+}
+[data-testid="stFileUploaderDropzone"] { flex-wrap: wrap; gap: 10px; }
+/* step tracker: wrap cleanly on narrow screens, no dangling connectors */
+.steps { flex-wrap: wrap; row-gap: 8px; }
+@media (max-width: 640px) {
+    .steps { display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+    .step-line { display: none !important; }
+}
+
 """
 
 st.markdown(
@@ -1056,7 +1136,7 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    if st.button("&larr; Landing", key="back_to_landing"):
+    if st.button("Back to landing", key="back_to_landing"):
         st.session_state["entered"] = False
         st.rerun()
 
@@ -1094,7 +1174,7 @@ with st.sidebar:
     else:
         for proj in projects:
             is_active = st.session_state.active_project_id == proj.id
-            label = f"{'●' if is_active else '○'}  {proj.name}"
+            label = proj.name
             if st.button(label, key=f"proj_{proj.id}", use_container_width=True,
                          type="primary" if is_active else "secondary"):
                 st.session_state.active_project_id = proj.id
@@ -1349,7 +1429,7 @@ def coverage_bar(segments, picked_indices):
         )
     st.markdown(
         f'<div style="margin:2px 0 6px;font-size:11px;font-family:var(--mono);'
-        f'letter-spacing:0.03em;color:var(--muted);">COVERAGE ACROSS YOUR VIDEO / 0:00 - '
+        f'letter-spacing:0.03em;color:var(--muted);">Coverage across your video, 0:00 to '
         f'{int(total // 60)}:{int(total % 60):02d}</div>'
         f'<div style="position:relative;height:16px;background:var(--surface-2);'
         f'border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:18px;">'
@@ -1365,7 +1445,6 @@ if project is None:
     # ── Landing ──
     st.markdown("""
     <section class="hero">
-        <div class="hero-eyebrow"><span class="pulse-dot"></span>Gemini-powered image studio</div>
         <h1 class="hero-title">Turn narration into a <em>visual story</em>.</h1>
         <p class="hero-sub">
             Upload a rough cut or voiceover. Gemini listens to the speech — including Tamil and
@@ -1429,6 +1508,9 @@ else:
         st.session_state["nav_page"] = "Create images"
 
     def _nav_from_seg():
+        if not st.session_state.get("nav_seg"):  # clicking the open tab clears it: stay on the page
+            st.session_state["nav_seg"] = st.session_state["nav_page"]
+            return
         st.session_state["nav_page"] = st.session_state["nav_seg"]
         st.session_state["nav_sel"] = st.session_state["nav_seg"]
 
@@ -1470,7 +1552,13 @@ else:
             st.session_state[mode_key] = db.get_memory(project.id, "output_mode") or "Generate images"
 
         def _save_mode():
-            db.set_memory(project.id, "output_mode", st.session_state[mode_key])
+            # Clicking the selected option again clears a segmented control (None).
+            # Keep the saved mode instead of crashing on a NOT NULL write.
+            chosen = st.session_state.get(mode_key)
+            if not chosen:
+                st.session_state[mode_key] = db.get_memory(project.id, "output_mode") or "Generate images"
+                return
+            db.set_memory(project.id, "output_mode", chosen)
 
         mode = st.segmented_control(
             "Output mode", ["Generate images", "Copy prompts"],
@@ -1505,7 +1593,7 @@ else:
         )
         st.caption("The audio is analyzed by your chosen Gemini model. It handles multilingual speech including Tamil, but quality varies by model and clip — check the transcript before generating. Generated images are saved in this project's library.")
 
-        if st.button("Analyze audio →", type="primary", disabled=not (gemini_key and source_video), key="analyze_video"):
+        if st.button("Analyze audio", type="primary", disabled=not (gemini_key and source_video), key="analyze_video"):
             try:
                 from core.audio_aligner import extract_audio
 
@@ -1614,7 +1702,7 @@ else:
                     value=True, key=f"use_ref_{project.id}",
                     help=("Each image after the first is generated with the previous scene's "
                           "image attached - same people, same style, carried forward."))
-                if st.button(f"Generate {count} image{'s' if count > 1 else ''} →", type="primary", key="generate_video_images"):
+                if st.button(f"Generate {count} image{'s' if count > 1 else ''}", type="primary", key="generate_video_images"):
                     created = []
                     prev_image = None
                     with st.status("Generating images", expanded=True) as status:
@@ -1659,7 +1747,11 @@ else:
                         db.get_memory(project.id, "block_text") or "AI interpretation")
 
                 def _save_block_source():
-                    db.set_memory(project.id, "block_text", st.session_state[block_source_key])
+                    chosen = st.session_state.get(block_source_key)
+                    if not chosen:  # re-clicking the selected option clears the control
+                        st.session_state[block_source_key] = db.get_memory(project.id, "block_text") or "AI interpretation"
+                        return
+                    db.set_memory(project.id, "block_text", chosen)
 
                 block_source = st.segmented_control(
                     "Block text", ["AI interpretation", "English text"],
