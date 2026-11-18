@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.character_sheet import (
     CHARACTER_SHEET_PROMPT, draft_character_sheet, compose_scene_prompt, compose_compact_block,
+    pick_block_text,
 )
 
 SHEET = ("CHARACTERS:\n"
@@ -144,6 +145,25 @@ def test_compact_block_without_sheet_still_has_rules():
     assert "Every image: cinematic 16:9 still" in block
     print("PASS: compact block works without a sheet")
 
+
+
+def test_pick_block_text_sources_and_fallbacks():
+    seg = dict(visual_description="a warm kitchen scene, golden light",
+               english_translation="Mom and I cook together every Sunday",
+               original_text="\u0bae\u0bb1\u0bcd\u0bb1\u0bc1\u0bae\u0bcd")
+    assert pick_block_text("interpretation", **seg) == seg["visual_description"]
+    assert pick_block_text("english", **seg) == seg["english_translation"]
+    # interpretation chain unchanged: empty visual falls back to translation, then original
+    assert pick_block_text("interpretation", visual_description="",
+                           english_translation="english words", original_text="tamil words") == "english words"
+    assert pick_block_text("interpretation", visual_description="",
+                           english_translation="", original_text="tamil words") == "tamil words"
+    # english mode: empty translation (English speech) falls back to the transcript
+    assert pick_block_text("english", visual_description="scene",
+                           english_translation="", original_text="raw transcript") == "raw transcript"
+    print("PASS: pick_block_text picks the requested source with unchanged fallbacks")
+
+
 if __name__ == "__main__":
     test_compose_includes_sheet_verbatim_in_every_scene()
     test_compose_without_sheet_keeps_plain_prompt()
@@ -153,4 +173,5 @@ if __name__ == "__main__":
     test_generate_image_reference_chaining()
     test_compact_block_sheet_once_scenarios_below()
     test_compact_block_without_sheet_still_has_rules()
+    test_pick_block_text_sources_and_fallbacks()
     print("ALL CHARACTER SHEET TESTS PASSED")

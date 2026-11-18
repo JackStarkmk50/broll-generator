@@ -13,7 +13,6 @@ import tempfile
 import math
 import re
 import os
-import torch
 
 
 @dataclass
@@ -164,7 +163,15 @@ class AudioBeatAligner:
     """
 
     def __init__(self, model_size: str = "base", device: str = None):
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        if device:
+            self.device = device
+        else:
+            try:
+                import torch
+                self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            except ImportError:
+                # torch is optional for the hosted Gemini flow; whisper needs it
+                self.device = "cpu"
         self.model_size = model_size
         self._whisperx_available = False
         self._whisper_model = None

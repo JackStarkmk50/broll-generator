@@ -78,3 +78,21 @@ def compose_compact_block(scenes, sheet: str = "", custom_instructions: str = ""
     blocks = ["\n".join(header)]
     blocks += [f"{label}: {scene}" for label, scene in scenes]
     return "\n\n".join(blocks)
+
+
+def pick_block_text(source: str, visual_description: str = "",
+                    english_translation: str = "", original_text: str = "") -> str:
+    """Choose the per-moment text for the combined copy block.
+
+    source "interpretation": the AI's visual reading of the moment
+    (visual_description), falling back to the English translation, then the
+    original transcript - the block's behavior since the copy mode shipped.
+    source "english": the English text stored for the moment (the app's
+    translation for non-English speech; the transcript itself for English
+    speech), falling back to the original transcript. All fields come from
+    the single audio-analysis response already stored per segment - no extra
+    AI call.
+    """
+    if source == "english":
+        return english_translation or original_text
+    return visual_description or english_translation or original_text
